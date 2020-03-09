@@ -4,6 +4,7 @@
 out
 gen
 
+.cpcache
 
 data/*
 !data/.gitkeep

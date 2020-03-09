@@ -31,6 +31,18 @@
           "&password=" pwd)})})
 
 
+  (def pg-db
+    {:datasource
+     (hcp/make-datasource
+       {:max-pool-size 10
+        :jdbc-url
+        (str
+          "jdbc:postgresql://" "localhost:5432"
+          "/" "redditbots_pg_db"
+          "?user=" "redditbots_pg_user"
+          "&password=" pwd)})})
+
+
   ;; Creating the tables
   (jdbc/execute! pg-db
     [(slurp (io/resource "reddit_bots/patience/db/install-schema.sql"))])

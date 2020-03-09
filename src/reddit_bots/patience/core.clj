@@ -593,7 +593,9 @@ WHERE NOT EXISTS (
 
 
   (jdbc/query pg-db ["SELECT * FROM processed_comments"])
-  (jdbc/query pg-db ["SELECT * FROM pat_subreddit_checkpoints"])
+  (->
+    (jdbc/query pg-db ["SELECT * FROM pat_subreddit_checkpoints"])
+    (supd/supdate [{:pat_checked_until_epoch_s u/epoch-s-to-date}]))
   (jdbc/query pg-db ["SELECT * FROM pat_comment_requests"])
 
   (jdbc/execute! pg-db ["TRUNCATE pat_subreddit_checkpoints"])
@@ -619,7 +621,7 @@ WHERE NOT EXISTS (
 
   (ps/fetch-comments-in-range "discussion_patiente"
     [:retrieved_on :created_utc]
-    (-> #inst "2020-01-01" .getTime)
+    (-> #inst "2020-03-04" .getTime)
     (-> (java.util.Date.) .getTime))
   *e)
 
@@ -713,6 +715,8 @@ WHERE NOT EXISTS (
     pg-db
     ["discussion_patiente"]
     (u/date-to-epoch-s (u/now-date)))
+
+  *e
 
   (send-reminders!
     pg-db
