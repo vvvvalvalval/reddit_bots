@@ -2,9 +2,9 @@
   (:require [reddit-bots.patience.core]
             [reddit-bots.patience.utils.scheduling :as usch]
             [reddit-bots.patience.utils :as u]
-            [hikari-cp.core :as hcp]))
+            [hikari-cp.core :as hcp]
+            [taoensso.timbre :as log]))
 
-;; TODO logging (Val, 09 Mar 2020)
 ;; TODO protocols ? (Val, 09 Mar 2020)
 
 (comment
@@ -24,16 +24,29 @@
   [pg-db reddit-creds]
   (let [stop-fns
         [(usch/do-in-loop (* 1000 60 1)
-           #(reddit-bots.patience.core/process-new-recent-comments!
-              pg-db reddit-creds reddit-subs))
+           (fn []
+             (try
+               (reddit-bots.patience.core/process-new-recent-comments!
+                 pg-db reddit-creds reddit-subs)
+               (catch Throwable err
+                 (log/error err "Error in loop iteration for" `reddit-bots.patience.core/process-new-recent-comments!)))))
          (usch/do-in-loop (* 1000 60 1)
-           #(reddit-bots.patience.core/send-reminders!
-              pg-db reddit-creds reddit-subs
-              (u/date-to-epoch-s (u/now-date))))
+           (fn []
+             (try
+               (reddit-bots.patience.core/send-reminders!
+                 pg-db reddit-creds reddit-subs
+                 (u/date-to-epoch-s (u/now-date)))
+               (catch Throwable err
+                 (log/error err "Error in loop iteration for" `reddit-bots.patience.core/send-reminders!)))))
+
          ;; FIXME
          #_(usch/do-in-loop (* 1000 60 60 1)
-             #(reddit-bots.patience.core/xpost-hot-posts!
-                pg-db reddit-creds xpost-config))]]
+             (fn []
+               (try
+                 (reddit-bots.patience.core/xpost-hot-posts!
+                   pg-db reddit-creds xpost-config)
+                 (catch Throwable err
+                   (log/error err "Error in loop iteration for" `reddit-bots.patience.core/xpost-hot-posts!)))))]]
     (fn stop-loops! []
       (run! #(%) stop-fns))))
 

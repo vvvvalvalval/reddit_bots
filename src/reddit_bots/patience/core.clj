@@ -1,5 +1,6 @@
 (ns reddit-bots.patience.core
-  (:require [clj-http.client :as htc]
+  (:require [taoensso.timbre :as log]
+            [clj-http.client :as htc]
             [clj-http.util :as htu]
             [clojure.string :as str]
             [cheshire.core :as json]
@@ -520,16 +521,20 @@ WHERE NOT EXISTS (
              (json/generate-string
                (mapv :reddit_comment_id
                  cmts))]))]
+    (log/debug (str "In r/" reddit-sub ",") (count cmts) "comments," (count unprocessed-ids) "unprocessed...")
     (->> cmts
       (filter #(contains? unprocessed-ids (:reddit_comment_id %)))
       (run!
         (fn [cmt]
-          (process-new-comment! pg-db reddit-creds reddit-sub
-            cmt)
-          (jdbc/insert! pg-db "processed_comments"
-            (merge
-              (select-keys cmt [:reddit_comment_id])
-              {:t_processed_epoch_s (u/date-to-epoch-s (java.util.Date.))})))))))
+          (try
+            (process-new-comment! pg-db reddit-creds reddit-sub
+              cmt)
+            (jdbc/insert! pg-db "processed_comments"
+              (merge
+                (select-keys cmt [:reddit_comment_id])
+                {:t_processed_epoch_s (u/date-to-epoch-s (java.util.Date.))}))
+            (catch Throwable err
+              (log/error err "Error processing comment."))))))))
 
 
 (comment
@@ -584,6 +589,7 @@ WHERE NOT EXISTS (
 
 (defn process-new-recent-comments!
   [pg-db reddit-creds reddit-subs]
+  (log/debug "Processing new recent comments")
   (run!
     #(process-new-recent-comments-in-sub! pg-db reddit-creds %)
     reddit-subs))
@@ -699,11 +705,17 @@ WHERE NOT EXISTS (
 
 (defn send-reminders!
   [pg-db reddit-creds reddit-subs now-epoch-s]
+  (log/debug "Sending reminders...")
   (let [reminder-commands (reminder-commands pg-db reddit-subs now-epoch-s)]
+    (log/debug (count reminder-commands) "reminders to send...")
     (run!
       (fn run-reminder-commands! [[reddit-notif-req db-update]]
-        (reddit/reddit-request reddit-creds reddit-notif-req)
-        (jdbc/execute! pg-db db-update))
+        (try
+          (reddit/reddit-request reddit-creds reddit-notif-req)
+          (jdbc/execute! pg-db db-update)
+          (catch Throwable err
+            (log/error err "Error sending reminder!")
+            (throw err))))
       reminder-commands)))
 
 
@@ -871,7 +883,11 @@ WHERE NOT EXISTS (
       (run!
         (fn xpost! [[xpost-reddit-req
                      sql-row-mark-seen]]
-          (reddit/reddit-request reddit-creds xpost-reddit-req)
+          (try
+            (reddit/reddit-request reddit-creds xpost-reddit-req)
+            (catch Throwable err
+              (log/error err "Error cross-posting.")
+              (throw err)))
           (jdbc/insert! pg-db "already_done" sql-row-mark-seen))))))
 
 (comment
@@ -883,6 +899,7 @@ WHERE NOT EXISTS (
 
 (defn xpost-hot-posts!
   [pg-db reddit-creds from-sub+to-sub+api-param-s]
+  (log/debug "Cross-posting hot posts...")
   (->> from-sub+to-sub+api-param-s
     (run!
       (fn [[reddit-hot-api-params from-sub to-sub]]
