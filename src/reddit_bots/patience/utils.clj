@@ -1,6 +1,13 @@
 (ns reddit-bots.patience.utils)
 
 
+(defn index-by [key-fn coll]
+  (into {}
+    (map (fn [x]
+           [(key-fn x) x]))
+    coll))
+
+
 (defn rename-keys
   [m oldk->newk]
   (when (some? m)

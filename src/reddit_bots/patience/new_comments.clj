@@ -10,15 +10,15 @@
 
 
 
-(defmethod i18n/pat-wording [:pat-first-notification--subject :fr]
-  [_wk _lang reddit-sub parent-cmt]
+(defmethod i18n/pat-wording [:pat-first-notification--subject :locale/fr]
+  [reddit-sub _wk parent-cmt]
   (format "r/%s : tu pourras répondre à %s dans 24h"
-    reddit-sub
+    (:pat_subreddit_id reddit-sub)
     (:author parent-cmt "(utilisateur supprimé)")))
 
 
-(defmethod i18n/pat-wording [:pat-first-notification--body :fr]
-  [_wk _lang reddit-sub cmt parent-cmt]
+(defmethod i18n/pat-wording [:pat-first-notification--body :locale/fr]
+  [reddit-sub _wk cmt parent-cmt]
   (format
     "Bonjour, ceci est un message automatique de modération de r/%s.
  Comme prévu dans le fonctionnement du forum, tu as manifesté ton intention de répondre à [%s](%s) de %s, en publiant un 'pré-commentaire',
@@ -26,7 +26,7 @@
  (tu recevras un message de rappel).
 
  Tu peux profiter de ces 24h pour réfléchir posément à ce que tu vas écrire (la nuit porte conseil)."
-    reddit-sub
+    (:pat_subreddit_id reddit-sub)
     (if (str/starts-with? (:reddit_parent_id cmt) "t3_")
       "cette publication"
       "ce commentaire")
@@ -50,7 +50,7 @@
          :pat_request_epoch_s (u/date-to-epoch-s (:reddit.comment/created_utc cmt))
          :reddit_user_name (:reddit_user_name cmt)
          :pat_sent_reminder false
-         :pat_subreddit_id reddit-sub}
+         :pat_subreddit_id (:pat_subreddit_id reddit-sub)}
         send-notif-reddit-req
         (let [parent-cmt (ps/find-post-or-comment-by-fullname
                            (:reddit_parent_id cmt)
@@ -61,18 +61,22 @@
            :reddit.api/path "/api/mod/conversations"
            ;; NOTE important NOT to json-encode the body (Val, 26 Feb 2020)
            :form-params {:isAuthorHidden false
-                         :srName reddit-sub
-                         :subject (i18n/pat-wording :pat-first-notification--subject :fr
-                                    reddit-sub parent-cmt)
-                         :body (i18n/pat-wording :pat-first-notification--body :fr
-                                 reddit-sub cmt parent-cmt)
+                         :srName (:pat_subreddit_id reddit-sub)
+                         :subject (i18n/pat-wording reddit-sub :pat-first-notification--subject
+                                    parent-cmt)
+                         :body (i18n/pat-wording reddit-sub :pat-first-notification--body
+                                 cmt parent-cmt)
                          :to (:reddit_user_name cmt)}})]
     [remove-reddit-req
      write-comment-request-row
      send-notif-reddit-req]))
 
 (comment
-  (pre-comment-commands "Clojure" cmt)
+  (def reddit-sub-Clojure
+    {:pat_subreddit_id "Clojure"
+     :pat_subreddit_locale :locale/en})
+
+  (pre-comment-commands reddit-sub-Clojure cmt)
 
   (def rc1
     (assoc reddit-creds
@@ -101,15 +105,15 @@
   *e)
 
 
-(defmethod i18n/pat-wording [:pat-too-early-notification--subject :fr]
-  [_wk _lang reddit-sub parent-cmt]
+(defmethod i18n/pat-wording [:pat-too-early-notification--subject :locale/fr]
+  [reddit-sub _lang parent-cmt]
   (format "r/%s : tu as répondu trop tôt à %s"
-    reddit-sub
+    (:pat_subreddit_id reddit-sub)
     (:author parent-cmt "(utilisateur supprimé)")))
 
 
-(defmethod i18n/pat-wording [:pat-too-early-notification--body :fr]
-  [_wk _lang reddit-sub cmt parent-cmt]
+(defmethod i18n/pat-wording [:pat-too-early-notification--body :locale/fr]
+  [reddit-sub _lang cmt parent-cmt]
   (format
     "Bonjour, ceci est un message automatique de modération de r/%s.
 
@@ -118,7 +122,7 @@
 
  Tu recevras un message de rappel une fois le délai écoulé: tu pourras publier
  ta réponse à partir de ce moment là."
-    reddit-sub
+    (:pat_subreddit_id reddit-sub)
     (if (str/starts-with? (:reddit_parent_id cmt) "t3_")
       "cette publication"
       "ce commentaire")
@@ -144,11 +148,11 @@
            :reddit.api/path "/api/mod/conversations"
            ;; NOTE important NOT to json-encode the body (Val, 26 Feb 2020)
            :form-params {:isAuthorHidden false
-                         :srName reddit-sub
-                         :subject (i18n/pat-wording :pat-too-early-notification--subject :fr
-                                    reddit-sub parent-cmt)
-                         :body (i18n/pat-wording :pat-too-early-notification--body :fr
-                                 reddit-sub cmt parent-cmt)
+                         :srName (:pat_subreddit_id reddit-sub)
+                         :subject (i18n/pat-wording reddit-sub :pat-too-early-notification--subject
+                                    parent-cmt)
+                         :body (i18n/pat-wording reddit-sub :pat-too-early-notification--body
+                                 cmt parent-cmt)
                          :to (:reddit_user_name cmt)}})]
     [remove-reddit-req
      send-notif-reddit-req]))
@@ -210,7 +214,7 @@ WHERE NOT EXISTS (
              (json/generate-string
                (mapv :reddit_comment_id
                  cmts))]))]
-    (log/debug (str "In r/" reddit-sub ",") (count cmts) "comments," (count unprocessed-ids) "unprocessed...")
+    (log/debug (format "In r/%s," (:pat_subreddit_id reddit-sub)) (count cmts) "comments," (count unprocessed-ids) "unprocessed...")
     (->> cmts
       (filter #(contains? unprocessed-ids (:reddit_comment_id %)))
       (run!
@@ -227,7 +231,8 @@ WHERE NOT EXISTS (
 
 
 (comment
-  (def reddit-sub {})
+  (def reddit-sub {:pat_subreddit_id "Clojure"
+                   :pat_subreddit_locale :locale/en})
 
   (;process-new-comments! pg-db reddit-creds reddit-sub
     (ps/fetch-comments-in-range
@@ -257,14 +262,14 @@ WHERE NOT EXISTS (
               (jdbc/query pg-db
                 ["SELECT pat_checked_until_epoch_s FROM pat_subreddit_checkpoints
            WHERE pat_subreddit_id = ?"
-                 reddit-sub]
+                 (:pat_subreddit_id reddit-sub)]
                 {:as-arrays? true})
               rest
               ffirst)
             (-> (java.util.Date.) .getTime (quot 1000)))
           (- backward-margin-s))
         end-time (-> (java.util.Date.) .getTime (quot 1000))
-        recent-comments (ps/fetch-comments-in-range reddit-sub
+        recent-comments (ps/fetch-comments-in-range (:pat_subreddit_id reddit-sub)
                           [:user_removed
                            :author :author_fullname
                            :parent_id
@@ -274,7 +279,7 @@ WHERE NOT EXISTS (
                           (* end-time 1000))]
     (process-new-comments! pg-db reddit-creds reddit-sub
       recent-comments)
-    (set-subreddit-checkpoint! pg-db reddit-sub end-time)))
+    (set-subreddit-checkpoint! pg-db (:pat_subreddit_id reddit-sub) end-time)))
 
 (defn process-new-recent-comments!
   [pg-db reddit-creds reddit-subs]

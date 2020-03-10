@@ -12,13 +12,13 @@
 
 
 (comment
-  (def reddit-sub "france")
+  (def pat_subreddit_id "france")
 
   (def top-posts
     (->
       (reddit/reddit-request reddit-creds
         {:method :get
-         :reddit.api/path (str "/r/" reddit-sub "/hot")
+         :reddit.api/path (str "/r/" pat_subreddit_id "/hot")
          :query-params {:api_type "json"
                         ;:t "hour"
                         :limit 50}})

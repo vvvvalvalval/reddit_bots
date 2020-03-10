@@ -1,6 +1,5 @@
 (ns reddit-bots.patience.main
-  (:require [reddit-bots.patience.core]
-            [reddit-bots.patience.utils.scheduling :as usch]
+  (:require [reddit-bots.patience.utils.scheduling :as usch]
             [reddit-bots.patience.utils :as u]
             [hikari-cp.core :as hcp]
             [taoensso.timbre :as log]
@@ -21,7 +20,8 @@
 
 (def reddit-subs
   ;; TODO config as maps, with language version (Val, 09 Mar 2020)
-  ["discussion_patiente"])
+  [{:pat_subreddit_id "discussion_patiente"
+    :pat_subreddit_locale :locale/fr}])
 
 (def xpost-config
   [["france" "discussion_patiente" {:limit 25 :count 25}]])

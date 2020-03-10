@@ -4,18 +4,19 @@
             [clojure.java.jdbc :as jdbc]
             [reddit-bots.patience.pushshift :as ps]
             [reddit-bots.patience.reddit :as reddit]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [reddit-bots.patience.utils :as u]))
 
 
-(defmethod i18n/pat-wording [:pat-24h-reminder--subject :fr]
-  [_wk _lang reddit-sub to-notify parent-cmt]
+(defmethod i18n/pat-wording [:pat-24h-reminder--subject :locale/fr]
+  [reddit-sub _lang to-notify parent-cmt]
   (format "r/%s : tu peux désormais répondre à %s"
-    reddit-sub
+    (:pat_subreddit_id reddit-sub)
     (:author parent-cmt "(utilisateur supprimé)")))
 
 
-(defmethod i18n/pat-wording [:pat-24h-reminder--body :fr]
-  [_wk _lang reddit-sub to-notify parent-cmt]
+(defmethod i18n/pat-wording [:pat-24h-reminder--body :locale/fr]
+  [reddit-sub _lang to-notify parent-cmt]
   (format
     "Bonjour, ceci est un message automatique de modération de r/%s.
 
@@ -23,7 +24,7 @@
 
  Prends tout le temps qu'il te faudra; si tu décides finalement de ne pas répondre,
  ce n'est pas un problème."
-    reddit-sub
+    (:pat_subreddit_id reddit-sub)
     (if (str/starts-with? (:reddit_parent_id to-notify) "t3_")
       "à la publication"
       "au commentaire")
@@ -34,7 +35,8 @@
 
 (defn reminder-commands
   [pg-db reddit-subs now-epoch-s]
-  (let [delay-s (* 60 60 24)
+  (let [id->reddit-sub (u/index-by :pat_subreddit_id reddit-subs)
+        delay-s (* 60 60 24)
         epoch-24h-ago-s (-> now-epoch-s
                           (- delay-s))
         to-notify
@@ -47,7 +49,7 @@
     (->> to-notify
       (mapv
         (fn [to-notify]
-          (let [reddit-sub (:pat_subreddit_id to-notify)
+          (let [reddit-sub (get id->reddit-sub (:pat_subreddit_id to-notify))
                 parent-cmt (ps/find-post-or-comment-by-fullname
                              (:reddit_parent_id to-notify)
                              [:user_removed
@@ -58,10 +60,10 @@
                  :reddit.api/path "/api/mod/conversations"
                  :form-params {:isAuthorHidden false
                                :srName reddit-sub
-                               :subject (i18n/pat-wording :pat-24h-reminder--subject :fr
-                                          reddit-sub to-notify parent-cmt)
-                               :body (i18n/pat-wording :pat-24h-reminder--body :fr
-                                       reddit-sub to-notify parent-cmt)
+                               :subject (i18n/pat-wording reddit-sub :pat-24h-reminder--subject
+                                          to-notify parent-cmt)
+                               :body (i18n/pat-wording reddit-sub :pat-24h-reminder--body
+                                       to-notify parent-cmt)
                                :to (:reddit_user_name to-notify)}}
                 db-update
                 ["UPDATE pat_comment_requests
