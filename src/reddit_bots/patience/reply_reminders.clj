@@ -1,0 +1,156 @@
+(ns reddit-bots.patience.reply-reminders
+  (:require [reddit-bots.patience.i18n :as i18n]
+            [clojure.string :as str]
+            [clojure.java.jdbc :as jdbc]
+            [reddit-bots.patience.pushshift :as ps]
+            [reddit-bots.patience.reddit :as reddit]
+            [taoensso.timbre :as log]))
+
+
+(defmethod i18n/pat-wording [:pat-24h-reminder--subject :fr]
+  [_wk _lang reddit-sub to-notify parent-cmt]
+  (format "r/%s : tu peux désormais répondre à %s"
+    reddit-sub
+    (:author parent-cmt "(utilisateur supprimé)")))
+
+
+(defmethod i18n/pat-wording [:pat-24h-reminder--body :fr]
+  [_wk _lang reddit-sub to-notify parent-cmt]
+  (format
+    "Bonjour, ceci est un message automatique de modération de r/%s.
+
+ Le délai de 24h étant écoulé, tu peux désormais répondre [%s](%s) de %s.
+
+ Prends tout le temps qu'il te faudra; si tu décides finalement de ne pas répondre,
+ ce n'est pas un problème."
+    reddit-sub
+    (if (str/starts-with? (:reddit_parent_id to-notify) "t3_")
+      "à la publication"
+      "au commentaire")
+    (str "https://reddit.com" (:permalink parent-cmt))
+    (:author parent-cmt "(utilisateur supprimé)")))
+
+
+
+(defn reminder-commands
+  [pg-db reddit-subs now-epoch-s]
+  (let [delay-s (* 60 60 24)
+        epoch-24h-ago-s (-> now-epoch-s
+                          (- delay-s))
+        to-notify
+        (jdbc/query pg-db
+          ["SELECT reddit_parent_id, reddit_user_fullname, reddit_user_name, pat_subreddit_id
+            FROM pat_comment_requests
+            WHERE NOT pat_sent_reminder
+            AND pat_request_epoch_s < ?"
+           epoch-24h-ago-s])]
+    (->> to-notify
+      (mapv
+        (fn [to-notify]
+          (let [reddit-sub (:pat_subreddit_id to-notify)
+                parent-cmt (ps/find-post-or-comment-by-fullname
+                             (:reddit_parent_id to-notify)
+                             [:user_removed
+                              :author
+                              :permalink])
+                reddit-notif-req
+                {:method :post
+                 :reddit.api/path "/api/mod/conversations"
+                 :form-params {:isAuthorHidden false
+                               :srName reddit-sub
+                               :subject (i18n/pat-wording :pat-24h-reminder--subject :fr
+                                          reddit-sub to-notify parent-cmt)
+                               :body (i18n/pat-wording :pat-24h-reminder--body :fr
+                                       reddit-sub to-notify parent-cmt)
+                               :to (:reddit_user_name to-notify)}}
+                db-update
+                ["UPDATE pat_comment_requests
+                     SET pat_sent_reminder = TRUE
+                     WHERE reddit_parent_id = ? AND reddit_user_fullname = ?"
+                 (:reddit_parent_id to-notify)
+                 (:reddit_user_fullname to-notify)]]
+            [reddit-notif-req
+             db-update]))))))
+
+
+(defn send-reminders!
+  [pg-db reddit-creds reddit-subs now-epoch-s]
+  (log/debug "Sending reminders...")
+  (let [reminder-commands (reminder-commands pg-db reddit-subs now-epoch-s)]
+    (log/debug (count reminder-commands) "reminders to send...")
+    (run!
+      (fn run-reminder-commands! [[reddit-notif-req db-update]]
+        (try
+          (reddit/reddit-request reddit-creds reddit-notif-req)
+          (jdbc/execute! pg-db db-update)
+          (catch Throwable err
+            (log/error err "Error sending reminder!")
+            (throw err))))
+      reminder-commands)))
+
+
+(comment
+  (jdbc/execute! pg-db
+    ["UPDATE pat_comment_requests SET pat_sent_reminder = FALSE WHERE TRUE"])
+
+  (reminder-commands
+    pg-db
+    ["discussion_patiente"]
+    (u/date-to-epoch-s (u/now-date)))
+
+  *e
+
+  (send-reminders!
+    pg-db
+    reddit-creds
+    ["discussion_patiente"]
+    (u/date-to-epoch-s (u/now-date)))
+
+  (def rc1 (assoc reddit-creds
+             :username "vvvvalvalval"
+             :password ""))
+
+
+
+  (reddit/reddit-request reddit-creds
+    {:method :post
+     :reddit.api/path "/api/mod/conversations"
+     :form-params {:api_type "json"
+                   :isAuthorHidden false
+                   :srName "discussion_patiente"
+                   :subject "Test message 0"
+                   :body "Do you copy ? 1 2 1 2 1 2"
+                   :to "u/vvvvalvalval"}})
+
+
+  (reddit/reddit-request reddit-creds
+    {:method :post
+     :reddit.api/path "/api/compose"
+     :form-params {:api_type "json"
+                   :from_sr "discussion_patiente"
+                   :subject "Test message 1"
+                   :text "Do you copy ?"
+                   :to "vvvvalvalval"}})
+
+  (reddit/reddit-request rc1
+    {:method :post
+     :reddit.api/path "/api/mod/conversations"
+     :form-params {:api_type "json"
+                   :isAuthorHidden false
+                   :srName "discussion_patiente"
+                   :subject "Test message 9"
+                   :body "Do you copy u/PatientModBot ?"
+                   :to "PatientModBot"}})
+
+
+  (reddit/reddit-request rc1
+    {:method :post
+     :reddit.api/path "/api/compose"
+     :form-params {:api_type "json"
+                   :from_sr "discussion_patiente"
+                   :subject "Test message 7"
+                   :text "Do you copy u/PatientModBot ?"
+                   :to "PatientModBot"}})
+
+  *e)
+

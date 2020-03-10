@@ -4,7 +4,11 @@
             [reddit-bots.patience.utils :as u]
             [hikari-cp.core :as hcp]
             [taoensso.timbre :as log]
-            [taoensso.timbre.appenders.core :as log-appenders]))
+            [taoensso.timbre.appenders.core :as log-appenders]
+            [reddit-bots.patience.db.postgres-setup]
+            [reddit-bots.patience.new-comments]
+            [reddit-bots.patience.sub-mirror]
+            [reddit-bots.patience.reply-reminders]))
 
 ;; TODO protocols ? (Val, 09 Mar 2020)
 
@@ -28,27 +32,27 @@
         [(usch/do-in-loop (* 1000 60 1)
            (fn []
              (try
-               (reddit-bots.patience.core/process-new-recent-comments!
+               (reddit-bots.patience.new-comments/process-new-recent-comments!
                  pg-db reddit-creds reddit-subs)
                (catch Throwable err
-                 (log/error err "Error in loop iteration for" `reddit-bots.patience.core/process-new-recent-comments!)))))
+                 (log/error err "Error in loop iteration for" `reddit-bots.patience.new-comments/process-new-recent-comments!)))))
          (usch/do-in-loop (* 1000 60 1)
            (fn []
              (try
-               (reddit-bots.patience.core/send-reminders!
+               (reddit-bots.patience.reply-reminders/send-reminders!
                  pg-db reddit-creds reddit-subs
                  (u/date-to-epoch-s (u/now-date)))
                (catch Throwable err
-                 (log/error err "Error in loop iteration for" `reddit-bots.patience.core/send-reminders!)))))
+                 (log/error err "Error in loop iteration for" `reddit-bots.patience.reply-reminders/send-reminders!)))))
 
          ;; FIXME
          #_(usch/do-in-loop (* 1000 60 60 1)
              (fn []
                (try
-                 (reddit-bots.patience.core/xpost-hot-posts!
+                 (reddit-bots.patience.sub-mirror/xpost-hot-posts!
                    pg-db reddit-creds xpost-config)
                  (catch Throwable err
-                   (log/error err "Error in loop iteration for" `reddit-bots.patience.core/xpost-hot-posts!)))))]]
+                   (log/error err "Error in loop iteration for" `reddit-bots.patience.sub-mirror/xpost-hot-posts!)))))]]
     (fn stop-loops! []
       (run! #(%) stop-fns))))
 
