@@ -3,15 +3,17 @@
             [reddit-bots.patience.utils.scheduling :as usch]
             [reddit-bots.patience.utils :as u]
             [hikari-cp.core :as hcp]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [taoensso.timbre.appenders.core :as log-appenders]))
 
 ;; TODO protocols ? (Val, 09 Mar 2020)
 
-(comment
-  (require 'sc.api)
+(require 'sc.api) ;; FIXME (Val, 10 Mar 2020)
 
-  *e)
-
+(do
+  (log/set-level! :debug)
+  (log/merge-config!
+    {:appenders {:spit (log-appenders/spit-appender {:fname "data/reddit-bots.log"})}}))
 
 (def reddit-subs
   ;; TODO config as maps, with language version (Val, 09 Mar 2020)
