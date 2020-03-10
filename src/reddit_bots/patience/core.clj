@@ -409,6 +409,30 @@ Hey **you**, I saw that you commented [here](https://www.reddit.com/r/discussion
 (comment
   (pre-comment-commands "Clojure" cmt)
 
+  (def rc1
+    (assoc reddit-creds
+      :reddit/username "vvvvalvalval"
+      :reddit/password ""))
+
+  (reddit/reddit-request rc1
+    {:method :post
+     :reddit.api/path "/api/remove"
+     :form-params
+     {:id (str "t1_" "fk3st7p")
+      :spam false}})
+
+  (reddit/reddit-request rc1
+    {:method :get
+     :reddit.api/path "/api/info"
+     :query-params {"id" (str "t1_" "fk3st7p")}})
+
+
+  (reddit/reddit-request reddit-creds
+    {:method :post
+     :reddit.api/path "/api/del"
+     :form-params
+     {:id (str "t1_" "fk3st7p")}})
+
   *e)
 
 
@@ -603,6 +627,21 @@ WHERE NOT EXISTS (
     (jdbc/query pg-db ["SELECT * FROM pat_subreddit_checkpoints"])
     (supd/supdate [{:pat_checked_until_epoch_s u/epoch-s-to-date}]))
   (jdbc/query pg-db ["SELECT * FROM pat_comment_requests"])
+
+  (jdbc/update! pg-db "pat_comment_requests"
+    {:pat_request_epoch_s (- 1583845323 (* 60 60 24))}
+    ["reddit_parent_id = ? AND reddit_user_fullname = ?"
+
+      "t3_fg2djf",
+      "t2_4tf84r5k"])
+
+  ;; Cheating with the clock
+  (jdbc/execute! pg-db
+    ["UPDATE pat_comment_requests
+     SET pat_request_epoch_s = pat_request_epoch_s - (60 * 60 * 24)
+     WHERE reddit_parent_id = ? AND reddit_user_fullname = ?"
+     "t1_fjanj6u",
+     "t2_4tf84r5k"])
 
   (jdbc/execute! pg-db ["TRUNCATE pat_subreddit_checkpoints"])
 
