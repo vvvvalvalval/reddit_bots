@@ -12,7 +12,15 @@
   [reddit-sub _lang to-notify parent-cmt]
   (format "r/%s : tu peux désormais répondre à %s"
     (:pat_subreddit_id reddit-sub)
-    (:author parent-cmt "(utilisateur supprimé)")))
+    (i18n/pat-wording reddit-sub :pat-user-handle
+      (:author parent-cmt))))
+
+(defmethod i18n/pat-wording [:pat-24h-reminder--subject :locale/en]
+  [reddit-sub _lang to-notify parent-cmt]
+  (format "r/%s : you may now reply to %s"
+    (:pat_subreddit_id reddit-sub)
+    (i18n/pat-wording reddit-sub :pat-user-handle
+      (:author parent-cmt))))
 
 
 (defmethod i18n/pat-wording [:pat-24h-reminder--body :locale/fr]
@@ -29,7 +37,24 @@
       "à la publication"
       "au commentaire")
     (str "https://reddit.com" (:permalink parent-cmt))
-    (:author parent-cmt "(utilisateur supprimé)")))
+    (i18n/pat-wording reddit-sub :pat-user-handle
+      (:author parent-cmt))))
+
+(defmethod i18n/pat-wording [:pat-24h-reminder--body :locale/en]
+  [reddit-sub _lang to-notify parent-cmt]
+  (format
+    "Hi, this is an automated moderation mail from r/%s.
+
+ The 24h delay is up: you may now reply to this [%s](%s) by %s.
+
+ Take all the time you need. If on second thought you decide not to reply, that's fine."
+    (:pat_subreddit_id reddit-sub)
+    (if (str/starts-with? (:reddit_parent_id to-notify) "t3_")
+      "post"
+      "comment")
+    (str "https://reddit.com" (:permalink parent-cmt))
+    (i18n/pat-wording reddit-sub :pat-user-handle
+      (:author parent-cmt))))
 
 
 

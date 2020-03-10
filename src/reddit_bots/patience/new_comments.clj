@@ -14,7 +14,15 @@
   [reddit-sub _wk parent-cmt]
   (format "r/%s : tu pourras répondre à %s dans 24h"
     (:pat_subreddit_id reddit-sub)
-    (:author parent-cmt "(utilisateur supprimé)")))
+    (i18n/pat-wording reddit-sub :pat-user-handle
+      (:author parent-cmt))))
+
+(defmethod i18n/pat-wording [:pat-first-notification--subject :locale/en]
+  [reddit-sub _wk parent-cmt]
+  (format "r/%s : you can reply to %s in 24h"
+    (:pat_subreddit_id reddit-sub)
+    (i18n/pat-wording reddit-sub :pat-user-handle
+      (:author parent-cmt))))
 
 
 (defmethod i18n/pat-wording [:pat-first-notification--body :locale/fr]
@@ -31,7 +39,28 @@
       "cette publication"
       "ce commentaire")
     (str "https://reddit.com" (:permalink parent-cmt))
-    (:author parent-cmt "(utilisateur supprimé)")))
+    (i18n/pat-wording reddit-sub :pat-user-handle
+      (:author parent-cmt))))
+
+(defmethod i18n/pat-wording [:pat-first-notification--body :locale/en]
+  [reddit-sub _wk cmt parent-cmt]
+  (format
+    "Hi, this is an automated moderation mail from r/%s.
+ As planned by the forum rules, you declared your intention of replying to this [%s](%s) by %s,
+ by posting a 'pre-comment', which has been automatically deleted.
+
+ You will be able to post your actual reply in **approximately 24 hours** - I will send you a reminder.
+ You can use this delay to craft a thoughtful answer (tip: sleeping always helps).
+
+ It's perfectly fine if you need more than 24h to design your reply - take your time.
+ If you eventually decide not to reply at all, that's fine as well."
+    (:pat_subreddit_id reddit-sub)
+    (if (str/starts-with? (:reddit_parent_id cmt) "t3_")
+      "post"
+      "comment")
+    (str "https://reddit.com" (:permalink parent-cmt))
+    (i18n/pat-wording reddit-sub :pat-user-handle
+      (:author parent-cmt))))
 
 
 
@@ -109,7 +138,15 @@
   [reddit-sub _lang parent-cmt]
   (format "r/%s : tu as répondu trop tôt à %s"
     (:pat_subreddit_id reddit-sub)
-    (:author parent-cmt "(utilisateur supprimé)")))
+    (i18n/pat-wording reddit-sub :pat-user-handle
+      (:author parent-cmt))))
+
+(defmethod i18n/pat-wording [:pat-too-early-notification--subject :locale/en]
+  [reddit-sub _lang parent-cmt]
+  (format "r/%s : your reply to %s was premature"
+    (:pat_subreddit_id reddit-sub)
+    (i18n/pat-wording reddit-sub :pat-user-handle
+      (:author parent-cmt))))
 
 
 (defmethod i18n/pat-wording [:pat-too-early-notification--body :locale/fr]
@@ -128,6 +165,23 @@
       "ce commentaire")
     (str "https://reddit.com" (:permalink parent-cmt))
     (:author parent-cmt "(utilisateur supprimé)")))
+
+(defmethod i18n/pat-wording [:pat-too-early-notification--body :locale/en]
+  [reddit-sub _lang cmt parent-cmt]
+  (format
+    "Hi, this is an automated moderation mail from r/%s.
+
+ Your reply to this [%s](%s) by %s did not abide by the minimum delay of 24h;
+ as a result, **your comment was deleted**.
+
+ You will receive a reminder when the time is up, at which point you will be able to post your reply."
+    (:pat_subreddit_id reddit-sub)
+    (if (str/starts-with? (:reddit_parent_id cmt) "t3_")
+      "post"
+      "comment")
+    (str "https://reddit.com" (:permalink parent-cmt))
+    (i18n/pat-wording reddit-sub :pat-user-handle
+      (:author parent-cmt))))
 
 
 (defn too-early-commands
