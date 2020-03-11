@@ -212,7 +212,8 @@
 (defn should-bypass-processing?
   [reddit-sub cmt]
   ;; HACK (Val, 11 Mar 2020)
-  (= "PatientModBot"
+  (contains?
+    #{"PatientModBot" "AutoModerator"}
     (:reddit_user_name cmt)))
 
 (defn process-new-comment!
