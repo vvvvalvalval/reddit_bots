@@ -28,7 +28,7 @@
   (format
     "Bonjour, ceci est un message automatique de modération de r/%s.
 
- Le délai de 24h étant écoulé, tu peux désormais répondre [%s](%s) de %s.
+ Le délai de 24h étant écoulé, **tu peux désormais répondre [%s](%s)** de %s, comme prévu par les [règles du forum](%s).
 
  Pour ce faire, rédige et publie ta réponse **dans un nouveau commentaire** [au même endroit](%s). (**Attention:** il s'agit bien de publier un _nouveau_ commentaire, PAS de modifier ton pré-commentaire.)
 
@@ -40,6 +40,7 @@
     (str "https://reddit.com" (:permalink parent-cmt))
     (i18n/pat-wording reddit-sub :pat-user-handle
       (:author parent-cmt))
+    (:pat_subreddit_rules_url reddit-sub)
     (str "https://reddit.com" (:permalink parent-cmt))))
 
 (defmethod i18n/pat-wording [:pat-24h-reminder--body :locale/en]
@@ -47,7 +48,7 @@
   (format
     "Hi, this is an automated moderation mail from r/%s.
 
- The 24h delay is up: you may now reply to [this %s](%s) by %s.
+ The 24h delay is up: **you may now reply to [this %s](%s)** by %s, as per the [rules of this forum](%s).
 
  To do so, write and post your reply **as a new comment** at [the same location](%s). (**Caution:** you have to post a _new_ comment, NOT update your pre-comment.)
 
@@ -59,6 +60,7 @@
     (str "https://reddit.com" (:permalink parent-cmt))
     (i18n/pat-wording reddit-sub :pat-user-handle
       (:author parent-cmt))
+    (:pat_subreddit_rules_url reddit-sub)
     (str "https://reddit.com" (:permalink parent-cmt))))
 
 

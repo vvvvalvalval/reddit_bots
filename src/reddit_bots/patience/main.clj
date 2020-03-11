@@ -20,9 +20,11 @@
 
 (def reddit-subs
   [{:pat_subreddit_id "discussion_patiente"
-    :pat_subreddit_locale :locale/fr}
+    :pat_subreddit_locale :locale/fr
+    :pat_subreddit_rules_url "https://www.reddit.com/r/discussion_patiente/comments/f9aka4/bienvenue_sur_rdiscussion_patiente/"}
    {:pat_subreddit_id "patient_hackernews"
-    :pat_subreddit_locale :locale/en}])
+    :pat_subreddit_locale :locale/en
+    :pat_subreddit_rules_url "https://www.reddit.com/r/patient_hackernews/comments/fgwtlh/welcome_to_rpatient_hackernews_readme/"}])
 
 (def xpost-config
   [["france" "discussion_patiente" {:limit 25 :count 25}]

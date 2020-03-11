@@ -30,14 +30,14 @@
   [reddit-sub _wk cmt parent-cmt]
   (format
     "Bonjour, ceci est un message automatique de modération de r/%s.
- Comme prévu dans le fonctionnement du forum, tu as manifesté ton intention de répondre à [%s](%s) de %s, en publiant un 'pré-commentaire',
- ; tu pourras publier ta véritable réponse dans **environ 24h**
- (tu recevras un message de rappel).
+ Comme prévu par le [fonctionnement du forum](%s), tu as manifesté ton intention de répondre à **[%s](%s)** de %s, en publiant un 'pré-commentaire';
+ tu pourras publier ta véritable réponse dans **environ 24h** (tu recevras un message de rappel).
 
  Tu peux profiter de ces 24h pour réfléchir posément à ce que tu vas écrire (la nuit porte conseil).
 
  Ton pré-commentaire n'est visible que par toi; je te **conseille de le supprimer** dès maintenant pour ne pas encombrer ta discussion."
     (:pat_subreddit_id reddit-sub)
+    (:pat_subreddit_rules_url reddit-sub)
     (if (str/starts-with? (:reddit_parent_id cmt) "t3_")
       "cette publication"
       "ce commentaire")
@@ -49,7 +49,7 @@
   [reddit-sub _wk cmt parent-cmt]
   (format
     "Hi, this is an automated moderation mail from r/%s.
- As planned by the forum rules, you declared your intention of replying to this [%s](%s) by %s,
+ As planned by the [forum rules](%s), you declared your intention of replying to **[this %s](%s)** by %s,
  by posting a 'pre-comment'. (This pre-comment is visible only to you; **I recommend you delete it** right now to get a cleaner view of the discussion).
 
  You will be able to post your actual reply in **approximately 24 hours** - I will send you a reminder.
@@ -58,6 +58,7 @@
  It's perfectly fine if you need more than 24h to design your reply - take your time.
  If you eventually decide not to reply at all, that's fine as well."
     (:pat_subreddit_id reddit-sub)
+    (:pat_subreddit_rules_url reddit-sub)
     (if (str/starts-with? (:reddit_parent_id cmt) "t3_")
       "post"
       "comment")
@@ -154,17 +155,18 @@
   (format
     "Bonjour, ceci est un message automatique de modération de r/%s.
 
- Tu as répondu à [%s](%s) de %s sans respecter le délai minimum de 24h;
- par conséquent, **ta réponse a été supprimée**.
+ Tu as répondu **[%s](%s)** de %s sans respecter le délai minimum de 24h;
+ par conséquent, **ta réponse a été supprimée**, comme expliqué dans le [fonctionnement du forum](%s).
 
  Tu recevras un message de rappel une fois le délai écoulé: tu pourras publier
  ta réponse à partir de ce moment là."
     (:pat_subreddit_id reddit-sub)
     (if (str/starts-with? (:reddit_parent_id cmt) "t3_")
-      "cette publication"
-      "ce commentaire")
+      "à la publication"
+      "au commentaire")
     (str "https://reddit.com" (:permalink parent-cmt))
-    (:author parent-cmt "(utilisateur supprimé)")))
+    (:author parent-cmt "(utilisateur supprimé)")
+    (:pat_subreddit_rules_url reddit-sub)))
 
 (defmethod i18n/pat-wording [:pat-too-early-notification--body :locale/en]
   [reddit-sub _lang cmt parent-cmt]
@@ -172,7 +174,7 @@
     "Hi, this is an automated moderation mail from r/%s.
 
  Your reply to this [%s](%s) by %s did not abide by the minimum delay of 24h;
- as a result, **your comment was deleted**.
+ as a result, **your comment was deleted**, as prescribed by the [rules of this forum](%s).
 
  You will receive a reminder when the time is up, at which point you will be able to post your reply."
     (:pat_subreddit_id reddit-sub)
@@ -181,7 +183,8 @@
       "comment")
     (str "https://reddit.com" (:permalink parent-cmt))
     (i18n/pat-wording reddit-sub :pat-user-handle
-      (:author parent-cmt))))
+      (:author parent-cmt))
+    (:pat_subreddit_rules_url reddit-sub)))
 
 
 (defn too-early-commands
