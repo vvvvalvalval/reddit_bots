@@ -69,7 +69,9 @@
 
 (defn pre-comment-commands
   [reddit-creds reddit-sub cmt]
-  (let [{user-fullname :reddit_user_fullname parent-id :reddit_parent_id} cmt
+  (let [{user-fullname :reddit_user_fullname
+         parent-id :reddit_parent_id
+         cmt-id :reddit_comment_id} cmt
         write-comment-request-row
         {:reddit_parent_id parent-id
          :reddit_user_fullname user-fullname
@@ -208,7 +210,7 @@
   [reddit-sub cmt]
   ;; HACK (Val, 11 Mar 2020)
   (= "PatientModBot"
-    (:reddit_user_fullname cmt)))
+    (:reddit_user_name cmt)))
 
 (defn process-new-comment!
   [pg-db reddit-creds reddit-sub cmt]
