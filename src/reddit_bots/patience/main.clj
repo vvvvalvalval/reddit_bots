@@ -19,7 +19,8 @@
     {:appenders {:spit (log-appenders/spit-appender {:fname "data/reddit-bots.log"})}}))
 
 (def reddit-subs
-  [{:pat_subreddit_id "discussion_patiente"
+  [#_
+   {:pat_subreddit_id "discussion_patiente"
     :pat_subreddit_locale :locale/fr
     :pat_subreddit_rules_url "https://www.reddit.com/r/discussion_patiente/comments/f9aka4/bienvenue_sur_rdiscussion_patiente/"}
    {:pat_subreddit_id "patient_hackernews"
@@ -27,8 +28,7 @@
     :pat_subreddit_rules_url "https://www.reddit.com/r/patient_hackernews/comments/fgwtlh/welcome_to_rpatient_hackernews_readme/"}])
 
 (def xpost-config
-  [["france" "discussion_patiente" {:limit 25 :count 25}]
-   #_
+  [#_["france" "discussion_patiente" {:limit 25 :count 25}]
    ["hackernews" "patient_hackernews" {:limit 25 :count 25}]])
 
 (defn start-loops
@@ -49,15 +49,13 @@
                  (u/date-to-epoch-s (u/now-date)))
                (catch Throwable err
                  (log/error err "Error in loop iteration for" `reddit-bots.patience.reply-reminders/send-reminders!)))))
-
-         ;; FIXME
-         #_(usch/do-in-loop (* 1000 60 60 1)
-             (fn []
-               (try
-                 (reddit-bots.patience.sub-mirror/xpost-hot-posts!
-                   pg-db reddit-creds xpost-config)
-                 (catch Throwable err
-                   (log/error err "Error in loop iteration for" `reddit-bots.patience.sub-mirror/xpost-hot-posts!)))))]]
+         (usch/do-in-loop (* 1000 60 60 1)
+           (fn []
+             (try
+               (reddit-bots.patience.sub-mirror/xpost-hot-posts!
+                 pg-db reddit-creds xpost-config)
+               (catch Throwable err
+                 (log/error err "Error in loop iteration for" `reddit-bots.patience.sub-mirror/xpost-hot-posts!)))))]]
     (fn stop-loops! []
       (run! #(%) stop-fns))))
 
