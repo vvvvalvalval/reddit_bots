@@ -93,7 +93,7 @@
                        :reddit.api/path "/api/submit"
                        :form-params
                        {:api_type "json"
-                        :sr "discussion_patiente"
+                        :sr to-sub
                         :kind "crosspost"
                         :title (:title post)
                         :crosspost_fullname (:name post)}}
@@ -117,6 +117,10 @@
   (xpost-hot-posts-from-sub!
     pg-db reddit-creds
     "france" "discussion_patiente" {:limit 2 :count 2})
+
+  (xpost-hot-posts-from-sub!
+    pg-db reddit-creds
+    "hackernews" "patient_hackernews" {:limit 25 :count 25})
 
   *e)
 
