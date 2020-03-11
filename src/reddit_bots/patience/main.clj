@@ -19,12 +19,15 @@
     {:appenders {:spit (log-appenders/spit-appender {:fname "data/reddit-bots.log"})}}))
 
 (def reddit-subs
-  ;; TODO config as maps, with language version (Val, 09 Mar 2020)
   [{:pat_subreddit_id "discussion_patiente"
-    :pat_subreddit_locale :locale/fr}])
+    :pat_subreddit_locale :locale/fr}
+   {:pat_subreddit_id "patient_hackernews"
+    :pat_subreddit_locale :locale/en}])
 
 (def xpost-config
-  [["france" "discussion_patiente" {:limit 25 :count 25}]])
+  [["france" "discussion_patiente" {:limit 25 :count 25}]
+   #_
+   ["hackernews" "patient_hackernews" {:limit 25 :count 25}]])
 
 (defn start-loops
   [pg-db reddit-creds]
