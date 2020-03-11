@@ -30,22 +30,26 @@
 
  Le délai de 24h étant écoulé, tu peux désormais répondre [%s](%s) de %s.
 
- Prends tout le temps qu'il te faudra; si tu décides finalement de ne pas répondre,
- ce n'est pas un problème."
+ Pour ce faire, rédige et publie ta réponse **dans un nouveau commentaire** [au même endroit](%s). (**Attention:** il s'agit bien de publier un _nouveau_ commentaire, PAS de modifier ton pré-commentaire.)
+
+ Prends tout le temps qu'il te faudra; si tu décides finalement de ne pas répondre, ce n'est pas un problème."
     (:pat_subreddit_id reddit-sub)
     (if (str/starts-with? (:reddit_parent_id to-notify) "t3_")
       "à la publication"
       "au commentaire")
     (str "https://reddit.com" (:permalink parent-cmt))
     (i18n/pat-wording reddit-sub :pat-user-handle
-      (:author parent-cmt))))
+      (:author parent-cmt))
+    (str "https://reddit.com" (:permalink parent-cmt))))
 
 (defmethod i18n/pat-wording [:pat-24h-reminder--body :locale/en]
   [reddit-sub _lang to-notify parent-cmt]
   (format
     "Hi, this is an automated moderation mail from r/%s.
 
- The 24h delay is up: you may now reply to this [%s](%s) by %s.
+ The 24h delay is up: you may now reply to [this %s](%s) by %s.
+
+ To do so, write and post your reply **as a new comment** at [the same location](%s). (**Caution:** you have to post a _new_ comment, NOT update your pre-comment.)
 
  Take all the time you need. If on second thought you decide not to reply, that's fine."
     (:pat_subreddit_id reddit-sub)
@@ -54,7 +58,8 @@
       "comment")
     (str "https://reddit.com" (:permalink parent-cmt))
     (i18n/pat-wording reddit-sub :pat-user-handle
-      (:author parent-cmt))))
+      (:author parent-cmt))
+    (str "https://reddit.com" (:permalink parent-cmt))))
 
 
 

@@ -31,10 +31,12 @@
   (format
     "Bonjour, ceci est un message automatique de modération de r/%s.
  Comme prévu dans le fonctionnement du forum, tu as manifesté ton intention de répondre à [%s](%s) de %s, en publiant un 'pré-commentaire',
- et ce pré-commentaire a été effacé; tu pourras publier ta véritable réponse dans **environ 24h**
+ ; tu pourras publier ta véritable réponse dans **environ 24h**
  (tu recevras un message de rappel).
 
- Tu peux profiter de ces 24h pour réfléchir posément à ce que tu vas écrire (la nuit porte conseil)."
+ Tu peux profiter de ces 24h pour réfléchir posément à ce que tu vas écrire (la nuit porte conseil).
+
+ Ton pré-commentaire n'est visible que par toi; je te **conseille de le supprimer** dès maintenant pour ne pas encombrer ta discussion."
     (:pat_subreddit_id reddit-sub)
     (if (str/starts-with? (:reddit_parent_id cmt) "t3_")
       "cette publication"
@@ -48,7 +50,7 @@
   (format
     "Hi, this is an automated moderation mail from r/%s.
  As planned by the forum rules, you declared your intention of replying to this [%s](%s) by %s,
- by posting a 'pre-comment', which has been automatically deleted.
+ by posting a 'pre-comment'. (This pre-comment is visible only to you; **I recommend you delete it** right now to get a cleaner view of the discussion).
 
  You will be able to post your actual reply in **approximately 24 hours** - I will send you a reminder.
  You can use this delay to craft a thoughtful answer (tip: sleeping always helps).
@@ -68,12 +70,6 @@
 (defn pre-comment-commands
   [reddit-creds reddit-sub cmt]
   (let [{user-fullname :reddit_user_fullname parent-id :reddit_parent_id} cmt
-        remove-reddit-req
-        {:method :post
-         :reddit.api/path "/api/remove"
-         :form-params
-         {:id (str "t1_" (:reddit_comment_id cmt))
-          :spam false}}
         write-comment-request-row
         {:reddit_parent_id parent-id
          :reddit_user_fullname user-fullname
@@ -99,8 +95,7 @@
                          :body (i18n/pat-wording reddit-sub :pat-first-notification--body
                                  cmt parent-cmt)
                          :to (:reddit_user_name cmt)}})]
-    [remove-reddit-req
-     write-comment-request-row
+    [write-comment-request-row
      send-notif-reddit-req]))
 
 (comment
@@ -188,14 +183,8 @@
 
 
 (defn too-early-commands
-  [reddit-sub cmt]
-  (let [remove-reddit-req
-        {:method :post
-         :reddit.api/path "/api/remove"
-         :form-params
-         {:id (str "t1_" (:reddit_comment_id cmt))
-          :spam false}}
-        send-notif-reddit-req
+  [reddit-creds reddit-sub cmt]
+  (let [send-notif-reddit-req
         (let [parent-cmt (-> (reddit/fetch-thing-by-fullname reddit-creds
                                (:reddit_parent_id cmt))
                            (select-keys
@@ -212,45 +201,51 @@
                          :body (i18n/pat-wording reddit-sub :pat-too-early-notification--body
                                  cmt parent-cmt)
                          :to (:reddit_user_name cmt)}})]
-    [remove-reddit-req
-     send-notif-reddit-req]))
+    [send-notif-reddit-req]))
+
+
+(defn should-bypass-processing?
+  [reddit-sub cmt]
+  ;; HACK (Val, 11 Mar 2020)
+  (= "PatientModBot"
+    (:reddit_user_fullname cmt)))
 
 (defn process-new-comment!
   [pg-db reddit-creds reddit-sub cmt]
-  (let [{user-fullname :reddit_user_fullname parent-id :reddit_parent_id} cmt]
-    (when (and (some? user-fullname) (some? parent-id))
-      (let [[[pat_request_epoch_s]]
-            (rest
-              (jdbc/query pg-db
-                ["SELECT pat_request_epoch_s FROM pat_comment_requests
+  (when-not (should-bypass-processing? reddit-sub cmt)
+    (let [{user-fullname :reddit_user_fullname parent-id :reddit_parent_id} cmt]
+      (when (and (some? user-fullname) (some? parent-id))
+        (let [[[pat_request_epoch_s]]
+              (rest
+                (jdbc/query pg-db
+                  ["SELECT pat_request_epoch_s FROM pat_comment_requests
                WHERE reddit_user_fullname = ? and reddit_parent_id = ?"
-                 user-fullname parent-id]
-                {:as-arrays? true}))
-            pre-comment? (nil? pat_request_epoch_s)]
-        (if pre-comment?
-          (let [[remove-reddit-req
-                 write-comment-request-row
-                 send-notif-reddit-req]
-                (pre-comment-commands reddit-creds reddit-sub cmt)]
-            (reddit/reddit-request reddit-creds
-              remove-reddit-req)
-            (jdbc/insert! pg-db "pat_comment_requests"
-              write-comment-request-row)
-            (reddit/reddit-request reddit-creds
-              send-notif-reddit-req))
-          (let [too-early? (>
-                             (* 24 60 60)
-                             (-
-                               (u/date-to-epoch-s (:reddit.comment/created_utc cmt))
-                               pat_request_epoch_s))]
-            (when too-early?
-              (let [[remove-reddit-req
-                     send-notif-reddit-req]
-                    (too-early-commands reddit-sub cmt)]
-                (reddit/reddit-request reddit-creds
-                  remove-reddit-req)
-                (reddit/reddit-request reddit-creds
-                  send-notif-reddit-req)))))))))
+                   user-fullname parent-id]
+                  {:as-arrays? true}))
+              pre-comment? (nil? pat_request_epoch_s)]
+          (if pre-comment?
+            (let [[write-comment-request-row
+                   send-notif-reddit-req]
+                  (pre-comment-commands reddit-creds reddit-sub cmt)]
+              (jdbc/insert! pg-db "pat_comment_requests"
+                write-comment-request-row)
+              (reddit/reddit-request reddit-creds
+                send-notif-reddit-req))
+            (let [too-early? (>
+                               (* 24 60 60)
+                               (-
+                                 (u/date-to-epoch-s (:reddit.comment/created_utc cmt))
+                                 pat_request_epoch_s))]
+              (if too-early?
+                (let [[send-notif-reddit-req]
+                      (too-early-commands reddit-creds reddit-sub cmt)]
+                  (reddit/reddit-request reddit-creds
+                    send-notif-reddit-req))
+                (let [approve-req
+                      {:method :post
+                       :reddit.api/path "/api/approve"
+                       :form-params {:id (str "t1_" (:reddit_comment_id cmt))}}]
+                  (reddit/reddit-request reddit-creds approve-req))))))))))
 
 
 (def sql_unprocessed-comments
