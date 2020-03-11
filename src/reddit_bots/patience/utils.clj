@@ -1,6 +1,11 @@
 (ns reddit-bots.patience.utils)
 
 
+(defn to-sorted-map
+  [m]
+  (into (sorted-map) m))
+
+
 (defn index-by [key-fn coll]
   (into {}
     (map (fn [x]

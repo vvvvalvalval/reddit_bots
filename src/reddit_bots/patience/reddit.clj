@@ -1,7 +1,8 @@
 (ns reddit-bots.patience.reddit
   (:require [clojure.core.async :as a]
             [clj-http.client :as htc]
-            [reddit-bots.patience.utils.scheduling :as usch]))
+            [reddit-bots.patience.utils.scheduling :as usch]
+            [clojure.string :as str]))
 
 (defonce reddit-throttler
   (usch/throttler-chan 0.7 10))
@@ -61,3 +62,56 @@
 (defn reddit-request
   [reddit-creds req]
   (rdc reddit-creds req))
+
+
+
+
+
+;; ------------------------------------------------------------------------------
+;; Listings
+
+(defn request-lazy-listing
+  "Fetches a Reddit API Listing as a lazy sequence, issuing API calls as it gets realized.
+
+  Your initial request should probably not contain any :after, :before or :count query params,
+  and should probably contain a :limit query-param."
+  ;; See: https://www.reddit.com/dev/api/
+  [reddit-creds req]
+  (letfn [(extract-listing [resp]
+            (-> resp :body :data))
+          (next-listing [[previous-listing n]]
+            (if (nil? previous-listing)
+              (let [l (-> (reddit-request reddit-creds req)
+                        extract-listing)]
+                [l (+ n (count (:children l)))])
+              (when-some [after (:after previous-listing)]
+                (let [next-req (-> req
+                                 (update :query-params
+                                   (fn [qp]
+                                     (-> qp (or {})
+                                       (merge {:after after
+                                               :count n})))))
+                      l (-> (reddit-request reddit-creds next-req)
+                          extract-listing)]
+                  [l (+ n (count (:children l)))]))))]
+    (->> [nil 0]
+      (iterate next-listing)
+      (take-while some?)
+      (mapcat (fn [[l _n]] (:children l))))))
+
+
+;; ------------------------------------------------------------------------------
+;; Misc
+
+(defn fetch-thing-by-fullname
+  [reddit-creds fullname]
+  (->
+    (reddit-request reddit-creds
+      {:method :get
+       :reddit.api/path "/api/info"
+       :query-params
+       {:api_type "json"
+        :id (str/join "," [fullname])}})
+    :body :data :children
+    first
+    :data))

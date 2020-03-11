@@ -6,7 +6,8 @@
             [clojure.java.jdbc :as jdbc]
             [reddit-bots.patience.reddit :as reddit]
             [cheshire.core :as json]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [vvvvalvalval.supdate.api :as supd]))
 
 
 
@@ -65,7 +66,7 @@
 
 
 (defn pre-comment-commands
-  [reddit-sub cmt]
+  [reddit-creds reddit-sub cmt]
   (let [{user-fullname :reddit_user_fullname parent-id :reddit_parent_id} cmt
         remove-reddit-req
         {:method :post
@@ -81,11 +82,13 @@
          :pat_sent_reminder false
          :pat_subreddit_id (:pat_subreddit_id reddit-sub)}
         send-notif-reddit-req
-        (let [parent-cmt (ps/find-post-or-comment-by-fullname
-                           (:reddit_parent_id cmt)
-                           [:user_removed
-                            :author
-                            :permalink])]
+        (let [parent-cmt
+              (-> (reddit/fetch-thing-by-fullname reddit-creds
+                    (:reddit_parent_id cmt))
+                (select-keys
+                  [:user_removed
+                   :author
+                   :permalink]))]
           {:method :post
            :reddit.api/path "/api/mod/conversations"
            ;; NOTE important NOT to json-encode the body (Val, 26 Feb 2020)
@@ -193,11 +196,12 @@
          {:id (str "t1_" (:reddit_comment_id cmt))
           :spam false}}
         send-notif-reddit-req
-        (let [parent-cmt (ps/find-post-or-comment-by-fullname
-                           (:reddit_parent_id cmt)
-                           [:user_removed
-                            :author
-                            :permalink])]
+        (let [parent-cmt (-> (reddit/fetch-thing-by-fullname reddit-creds
+                               (:reddit_parent_id cmt))
+                           (select-keys
+                             [:user_removed
+                              :author
+                              :permalink]))]
           {:method :post
            :reddit.api/path "/api/mod/conversations"
            ;; NOTE important NOT to json-encode the body (Val, 26 Feb 2020)
@@ -227,7 +231,7 @@
           (let [[remove-reddit-req
                  write-comment-request-row
                  send-notif-reddit-req]
-                (pre-comment-commands reddit-sub cmt)]
+                (pre-comment-commands reddit-creds reddit-sub cmt)]
             (reddit/reddit-request reddit-creds
               remove-reddit-req)
             (jdbc/insert! pg-db "pat_comment_requests"
@@ -306,10 +310,49 @@ WHERE NOT EXISTS (
      pat_subreddit_id checked-until-epoch-s checked-until-epoch-s]))
 
 
+(defn fetch-recent-comments-in-sub
+  [reddit-creds pat_subreddit_id from-epoch-s]
+  (into []
+    (comp
+      (map (fn reshaped-cmt [m]
+             (-> m
+               :data
+               (supd/supdate
+                 {:created_utc u/epoch-s-to-date})
+               (u/rename-keys
+                 {:user_removed :reddit.comment/user_removed
+                  :author :reddit_user_name
+                  :author_fullname :reddit_user_fullname
+                  :parent_id :reddit_parent_id
+                  :id :reddit_comment_id
+                  :created_utc :reddit.comment/created_utc}))))
+      (filter (fn recent-comment? [cmt]
+                (-> cmt :reddit.comment/created_utc u/date-to-epoch-s
+                  (>= from-epoch-s)))))
+    (reddit/request-lazy-listing reddit-creds
+      ;; NOTE this API endpoint is not officially documented (Val, 11 Mar 2020)
+      ;; I found about it here: https://www.reddit.com/r/modhelp/comments/btji32/want_to_see_unmoderated_comments/
+      {:method :get
+       :reddit.api/path (format "/r/%s/comments" pat_subreddit_id)
+       :query-params {:api_type :json
+                      :limit 25}})))
+
+(comment
+  (fetch-recent-comments-in-sub reddit-creds "discussion_patiente"
+    (-> (u/now-date) u/date-to-epoch-s (- (* 60 60 24))))
+
+
+  *e)
+
+
+(def reddit-new-comments-lag
+  "The 'backard safety margin' we take for fetching new Reddit comments."
+  (* 60 5))
+
+
 (defn process-new-recent-comments-in-sub!
   [pg-db reddit-creds reddit-sub]
-  (let [backward-margin-s (* 60 60)
-        start-time
+  (let [start-time
         (->
           (or
             (->
@@ -320,17 +363,10 @@ WHERE NOT EXISTS (
                 {:as-arrays? true})
               rest
               ffirst)
-            (-> (java.util.Date.) .getTime (quot 1000)))
-          (- backward-margin-s))
+            (-> (u/now-date) u/date-to-epoch-s))
+          (- reddit-new-comments-lag))
         end-time (-> (java.util.Date.) .getTime (quot 1000))
-        recent-comments (ps/fetch-comments-in-range (:pat_subreddit_id reddit-sub)
-                          [:user_removed
-                           :author :author_fullname
-                           :parent_id
-                           :id
-                           :created_utc]
-                          (* start-time 1000)
-                          (* end-time 1000))]
+        recent-comments (fetch-recent-comments-in-sub reddit-creds (:pat_subreddit_id reddit-sub) start-time)]
     (process-new-comments! pg-db reddit-creds reddit-sub
       recent-comments)
     (set-subreddit-checkpoint! pg-db (:pat_subreddit_id reddit-sub) end-time)))
@@ -382,7 +418,14 @@ WHERE NOT EXISTS (
   #inst"2020-03-02T20:04:10.056-00:00"
   (ps/find-post-or-comment-by-fullname "t1_fjaqdmj" nil)
   (ps/find-post-or-comment-by-fullname "t1_fitl83r" nil)
-  (ps/find-post-or-comment-by-fullname "t3_f9t460" nil)
+  (ps/find-post-or-comment-by-fullname "t3_f9t460" [:user_removed
+                                                    :author
+                                                    :permalink])
+
+  (u/to-sorted-map
+    (reddit/fetch-thing-by-fullname reddit-creds
+      "t3_f9t460"))
+
 
   (set-subreddit-checkpoint! pg-db "discussion_patiente"
     (-> #inst "2020-01-01" .getTime (quot 1000)))
@@ -393,7 +436,4 @@ WHERE NOT EXISTS (
     (-> #inst "2020-03-04" .getTime)
     (-> (java.util.Date.) .getTime))
   *e)
-
-
-
 

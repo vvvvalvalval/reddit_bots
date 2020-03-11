@@ -59,7 +59,7 @@
 
 
 (defn reminder-commands
-  [pg-db reddit-subs now-epoch-s]
+  [pg-db reddit-creds reddit-subs now-epoch-s]
   (let [id->reddit-sub (u/index-by :pat_subreddit_id reddit-subs)
         delay-s (* 60 60 24)
         epoch-24h-ago-s (-> now-epoch-s
@@ -75,16 +75,17 @@
       (mapv
         (fn [to-notify]
           (let [reddit-sub (get id->reddit-sub (:pat_subreddit_id to-notify))
-                parent-cmt (ps/find-post-or-comment-by-fullname
-                             (:reddit_parent_id to-notify)
-                             [:user_removed
-                              :author
-                              :permalink])
+                parent-cmt (-> (reddit/fetch-thing-by-fullname reddit-creds
+                                 (:reddit_parent_id to-notify))
+                             (select-keys
+                               [:user_removed
+                                :author
+                                :permalink]))
                 reddit-notif-req
                 {:method :post
                  :reddit.api/path "/api/mod/conversations"
                  :form-params {:isAuthorHidden false
-                               :srName reddit-sub
+                               :srName (:pat_subreddit_id reddit-sub)
                                :subject (i18n/pat-wording reddit-sub :pat-24h-reminder--subject
                                           to-notify parent-cmt)
                                :body (i18n/pat-wording reddit-sub :pat-24h-reminder--body
@@ -103,8 +104,8 @@
 (defn send-reminders!
   [pg-db reddit-creds reddit-subs now-epoch-s]
   (log/debug "Sending reminders...")
-  (let [reminder-commands (reminder-commands pg-db reddit-subs now-epoch-s)]
-    (log/debug (count reminder-commands) "reminders to send...")
+  (let [reminder-cmds (reminder-commands pg-db reddit-creds reddit-subs now-epoch-s)]
+    (log/debug (count reminder-cmds) "reminders to send...")
     (run!
       (fn run-reminder-commands! [[reddit-notif-req db-update]]
         (try
@@ -113,7 +114,7 @@
           (catch Throwable err
             (log/error err "Error sending reminder!")
             (throw err))))
-      reminder-commands)))
+      reminder-cmds)))
 
 
 (comment
