@@ -438,3 +438,10 @@ WHERE NOT EXISTS (
     (-> (java.util.Date.) .getTime))
   *e)
 
+
+(comment ;; How many requests to this post?
+  (jdbc/query pg-db
+    ["SELECT * FROM pat_comment_requests WHERE reddit_parent_id = ?"
+     (str "t3_" "fh3a07")])
+
+  *e)
