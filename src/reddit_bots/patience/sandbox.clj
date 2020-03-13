@@ -23,12 +23,6 @@
 
   *e)
 
-(comment
-  ;; go to
-  reddit-bots.patience.db.sql
-  (def pg-db *1)
-
-  *e)
 
 (defn gen-token [l]
   (apply str

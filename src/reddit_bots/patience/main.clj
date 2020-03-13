@@ -10,7 +10,8 @@
             [reddit-bots.patience.reply-reminders]
             [reddit-bots.patience.env :as patenv]
             [reddit-bots.patience.env.sql :as sql]
-            [reddit-bots.patience.env.reddit :as redd]))
+            [reddit-bots.patience.env.reddit :as redd]
+            [clojure.java.jdbc :as jdbc]))
 
 (require 'sc.api) ;; FIXME (Val, 10 Mar 2020)
 
@@ -104,6 +105,8 @@
           (shutdown-agents))))))
 
 
+
+
 (comment ;; PROD startup
   (def pg-pwd "")
 
@@ -132,6 +135,7 @@
 
   *e)
 
+
 (comment ;; Local dev startup
 
   (def jdbc-url
@@ -148,5 +152,22 @@
     (start-loops pat-env))
 
   (stop!)
+
+  *e)
+
+
+
+
+(comment ;; SQL table definition
+
+  (jdbc/execute! pg-db
+    [(slurp (io/resource "reddit_bots/patience/db/install-schema.sql"))])
+
+  (jdbc/execute! pg-db
+    ["
+    DROP TABLE already_done;
+    DROP TABLE processed_comments;
+    DROP TABLE pat_comment_requests;
+    DROP TABLE pat_subreddit_checkpoints;"])
 
   *e)
