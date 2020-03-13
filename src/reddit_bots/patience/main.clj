@@ -12,8 +12,6 @@
             [reddit-bots.patience.env.sql :as sql]
             [reddit-bots.patience.env.reddit :as redd]))
 
-;; TODO protocols ? (Val, 09 Mar 2020)
-
 (require 'sc.api) ;; FIXME (Val, 10 Mar 2020)
 
 (do
@@ -125,11 +123,16 @@
   (def reddit-pwd "")
 
 
-  (-main jdbc-url reddit-client-id reddit-client-secret reddit-username reddit-pwd)
+  (def pat-env
+    (mock-env jdbc-url reddit-client-id reddit-client-secret reddit-username reddit-pwd))
+
+  (def stop! (start-loops pat-env))
+
+  (stop!)
 
   *e)
 
-(comment
+(comment ;; Local dev startup
 
   (def jdbc-url
     (str
