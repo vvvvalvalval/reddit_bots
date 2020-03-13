@@ -5,7 +5,11 @@
             [reddit-bots.patience.pushshift :as ps]
             [reddit-bots.patience.reddit :as reddit]
             [taoensso.timbre :as log]
-            [reddit-bots.patience.utils :as u]))
+            [reddit-bots.patience.utils :as u]
+            [reddit-bots.patience.env.sql :as sql]
+            [reddit-bots.patience.env :as patenv]
+            [reddit-bots.patience.env.effect :as pat-eff]
+            [reddit-bots.patience.env.reddit :as redd]))
 
 
 (defmethod i18n/pat-wording [:pat-24h-reminder--subject :locale/fr]
@@ -66,23 +70,25 @@
 
 
 (defn reminder-commands
-  [pg-db reddit-creds reddit-subs now-epoch-s]
-  (let [id->reddit-sub (u/index-by :pat_subreddit_id reddit-subs)
+  [pat-env reddit-subs]
+  (let [now-epoch-s (u/date-to-epoch-s (::patenv/now-date pat-env))
+        id->reddit-sub (u/index-by :pat_subreddit_id reddit-subs)
         delay-s (* 60 60 24)
         epoch-24h-ago-s (-> now-epoch-s
                           (- delay-s))
         to-notify
-        (jdbc/query pg-db
+        (sql/query (::patenv/sql-client pat-env)
           ["SELECT reddit_parent_id, reddit_user_fullname, reddit_user_name, pat_subreddit_id
             FROM pat_comment_requests
             WHERE NOT pat_sent_reminder
             AND pat_request_epoch_s < ?"
-           epoch-24h-ago-s])]
+           epoch-24h-ago-s]
+          {})]
     (->> to-notify
       (mapv
         (fn [to-notify]
           (let [reddit-sub (get id->reddit-sub (:pat_subreddit_id to-notify))
-                parent-cmt (-> (reddit/fetch-thing-by-fullname reddit-creds
+                parent-cmt (-> (redd/fetch-thing-by-fullname (::patenv/reddit-client pat-env)
                                  (:reddit_parent_id to-notify))
                              (select-keys
                                [:user_removed
@@ -104,24 +110,18 @@
                      WHERE reddit_parent_id = ? AND reddit_user_fullname = ?"
                  (:reddit_parent_id to-notify)
                  (:reddit_user_fullname to-notify)]]
-            [reddit-notif-req
-             db-update]))))))
+            [{::pat-eff/effect-type ::pat-eff/change-reddit!
+              ::pat-eff/reddit-req reddit-notif-req}
+             {::pat-eff/effect-type ::pat-eff/jdbc-execute!
+              ::pat-eff/jdbc-args [db-update {}]}]))))))
 
 
 (defn send-reminders!
-  [pg-db reddit-creds reddit-subs now-epoch-s]
+  [pat-env reddit-subs]
   (log/debug "Sending reminders...")
-  (let [reminder-cmds (reminder-commands pg-db reddit-creds reddit-subs now-epoch-s)]
+  (let [reminder-cmds (reminder-commands pat-env reddit-subs)]
     (log/debug (count reminder-cmds) "reminders to send...")
-    (run!
-      (fn run-reminder-commands! [[reddit-notif-req db-update]]
-        (try
-          (reddit/reddit-request reddit-creds reddit-notif-req)
-          (jdbc/execute! pg-db db-update)
-          (catch Throwable err
-            (log/error err "Error sending reminder!")
-            (throw err))))
-      reminder-cmds)))
+    (run! pat-eff/effect! reminder-cmds)))
 
 
 (comment
@@ -130,16 +130,14 @@
 
   (reminder-commands
     pg-db
-    ["discussion_patiente"]
-    (u/date-to-epoch-s (u/now-date)))
+    ["discussion_patiente"])
 
   *e
 
   (send-reminders!
     pg-db
     reddit-creds
-    ["discussion_patiente"]
-    (u/date-to-epoch-s (u/now-date)))
+    ["discussion_patiente"])
 
   (def rc1 (assoc reddit-creds
              :username "vvvvalvalval"

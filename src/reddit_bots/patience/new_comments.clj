@@ -5,8 +5,12 @@
             [reddit-bots.patience.pushshift :as ps]
             [clojure.java.jdbc :as jdbc]
             [reddit-bots.patience.reddit :as reddit]
+            [reddit-bots.patience.env.reddit :as redd]
+            [reddit-bots.patience.env.sql :as sql]
             [cheshire.core :as json]
             [taoensso.timbre :as log]
+            [reddit-bots.patience.env :as patenv]
+            [reddit-bots.patience.env.effect :as pat-eff]
             [vvvvalvalval.supdate.api :as supd]))
 
 
@@ -69,35 +73,41 @@
 
 
 (defn pre-comment-commands
-  [reddit-creds reddit-sub cmt]
+  [pat-env reddit-sub cmt]
   (let [{user-fullname :reddit_user_fullname
          parent-id :reddit_parent_id
-         cmt-id :reddit_comment_id} cmt
+         _cmt-id :reddit_comment_id} cmt
         write-comment-request-row
-        {:reddit_parent_id parent-id
-         :reddit_user_fullname user-fullname
-         :pat_request_epoch_s (u/date-to-epoch-s (:reddit.comment/created_utc cmt))
-         :reddit_user_name (:reddit_user_name cmt)
-         :pat_sent_reminder false
-         :pat_subreddit_id (:pat_subreddit_id reddit-sub)}
+        {::pat-eff/effect-type ::pat-eff/jdbc-insert!
+         ::pat-eff/jdbc-args
+         ["pat_comment_requests"
+          {:reddit_parent_id parent-id
+           :reddit_user_fullname user-fullname
+           :pat_request_epoch_s (u/date-to-epoch-s (:reddit.comment/created_utc cmt))
+           :reddit_user_name (:reddit_user_name cmt)
+           :pat_sent_reminder false
+           :pat_subreddit_id (:pat_subreddit_id reddit-sub)}]}
         send-notif-reddit-req
         (let [parent-cmt
-              (-> (reddit/fetch-thing-by-fullname reddit-creds
+              (-> (redd/fetch-thing-by-fullname
+                    (::patenv/reddit-client pat-env)
                     (:reddit_parent_id cmt))
                 (select-keys
                   [:user_removed
                    :author
                    :permalink]))]
-          {:method :post
-           :reddit.api/path "/api/mod/conversations"
-           ;; NOTE important NOT to json-encode the body (Val, 26 Feb 2020)
-           :form-params {:isAuthorHidden false
-                         :srName (:pat_subreddit_id reddit-sub)
-                         :subject (i18n/pat-wording reddit-sub :pat-first-notification--subject
-                                    parent-cmt)
-                         :body (i18n/pat-wording reddit-sub :pat-first-notification--body
-                                 cmt parent-cmt)
-                         :to (:reddit_user_name cmt)}})]
+          {::pat-eff/effect-type ::pat-eff/change-reddit!
+           ::pat-eff/reddit-req
+           {:method :post
+            :reddit.api/path "/api/mod/conversations"
+            ;; NOTE important NOT to json-encode the body (Val, 26 Feb 2020)
+            :form-params {:isAuthorHidden false
+                          :srName (:pat_subreddit_id reddit-sub)
+                          :subject (i18n/pat-wording reddit-sub :pat-first-notification--subject
+                                     parent-cmt)
+                          :body (i18n/pat-wording reddit-sub :pat-first-notification--body
+                                  cmt parent-cmt)
+                          :to (:reddit_user_name cmt)}}})]
     [write-comment-request-row
      send-notif-reddit-req]))
 
@@ -188,24 +198,27 @@
 
 
 (defn too-early-commands
-  [reddit-creds reddit-sub cmt]
+  [pat-env reddit-sub cmt]
   (let [send-notif-reddit-req
-        (let [parent-cmt (-> (reddit/fetch-thing-by-fullname reddit-creds
+        (let [parent-cmt (-> (redd/fetch-thing-by-fullname
+                               (::patenv/reddit-client pat-env)
                                (:reddit_parent_id cmt))
                            (select-keys
                              [:user_removed
                               :author
                               :permalink]))]
-          {:method :post
-           :reddit.api/path "/api/mod/conversations"
-           ;; NOTE important NOT to json-encode the body (Val, 26 Feb 2020)
-           :form-params {:isAuthorHidden false
-                         :srName (:pat_subreddit_id reddit-sub)
-                         :subject (i18n/pat-wording reddit-sub :pat-too-early-notification--subject
-                                    parent-cmt)
-                         :body (i18n/pat-wording reddit-sub :pat-too-early-notification--body
-                                 cmt parent-cmt)
-                         :to (:reddit_user_name cmt)}})]
+          {::pat-eff/effect-type ::pat-eff/change-reddit!
+           ::pat-eff/reddit-req
+           {:method :post
+            :reddit.api/path "/api/mod/conversations"
+            ;; NOTE important NOT to json-encode the body (Val, 26 Feb 2020)
+            :form-params {:isAuthorHidden false
+                          :srName (:pat_subreddit_id reddit-sub)
+                          :subject (i18n/pat-wording reddit-sub :pat-too-early-notification--subject
+                                     parent-cmt)
+                          :body (i18n/pat-wording reddit-sub :pat-too-early-notification--body
+                                  cmt parent-cmt)
+                          :to (:reddit_user_name cmt)}}})]
     [send-notif-reddit-req]))
 
 
@@ -216,42 +229,39 @@
     #{"PatientModBot" "AutoModerator"}
     (:reddit_user_name cmt)))
 
-(defn process-new-comment!
-  [pg-db reddit-creds reddit-sub cmt]
+(defn process-new-comment-commands
+  [pat-env reddit-sub cmt]
   (when-not (should-bypass-processing? reddit-sub cmt)
     (let [{user-fullname :reddit_user_fullname parent-id :reddit_parent_id} cmt]
       (when (and (some? user-fullname) (some? parent-id))
         (let [[[pat_request_epoch_s]]
               (rest
-                (jdbc/query pg-db
+                (sql/query (::patenv/sql-client pat-env)
                   ["SELECT pat_request_epoch_s FROM pat_comment_requests
                WHERE reddit_user_fullname = ? and reddit_parent_id = ?"
                    user-fullname parent-id]
                   {:as-arrays? true}))
               pre-comment? (nil? pat_request_epoch_s)]
           (if pre-comment?
-            (let [[write-comment-request-row
-                   send-notif-reddit-req]
-                  (pre-comment-commands reddit-creds reddit-sub cmt)]
-              (jdbc/insert! pg-db "pat_comment_requests"
-                write-comment-request-row)
-              (reddit/reddit-request reddit-creds
-                send-notif-reddit-req))
+            (pre-comment-commands pat-env reddit-sub cmt)
             (let [too-early? (>
                                (* 24 60 60)
                                (-
                                  (u/date-to-epoch-s (:reddit.comment/created_utc cmt))
                                  pat_request_epoch_s))]
               (if too-early?
-                (let [[send-notif-reddit-req]
-                      (too-early-commands reddit-creds reddit-sub cmt)]
-                  (reddit/reddit-request reddit-creds
-                    send-notif-reddit-req))
+                (too-early-commands pat-env reddit-sub cmt)
                 (let [approve-req
                       {:method :post
                        :reddit.api/path "/api/approve"
                        :form-params {:id (str "t1_" (:reddit_comment_id cmt))}}]
-                  (reddit/reddit-request reddit-creds approve-req))))))))))
+                  [{::pat-eff/effect-type ::pat-eff/change-reddit!
+                    ::pat-eff/reddit-req approve-req}])))))))))
+
+(defn process-new-comment!
+  [pat-env reddit-sub cmt]
+  (let [cmds (process-new-comment-commands pat-env reddit-sub cmt)]
+    (run! pat-eff/effect! cmds)))
 
 
 (def sql_unprocessed-comments
@@ -264,24 +274,25 @@ WHERE NOT EXISTS (
 )")
 
 (defn process-new-comments!
-  [pg-db reddit-creds reddit-sub cmts]
+  [{sql-client ::patenv/sql-client, :as pat-env} reddit-sub cmts]
   (let [unprocessed-ids
         (into #{}
           (map :reddit_comment_id)
-          (jdbc/query pg-db
+          (sql/query sql-client
             [sql_unprocessed-comments
              (json/generate-string
                (mapv :reddit_comment_id
-                 cmts))]))]
+                 cmts))]
+            {}))]
     (log/debug (format "In r/%s," (:pat_subreddit_id reddit-sub)) (count cmts) "comments," (count unprocessed-ids) "unprocessed...")
     (->> cmts
       (filter #(contains? unprocessed-ids (:reddit_comment_id %)))
       (run!
         (fn [cmt]
           (try
-            (process-new-comment! pg-db reddit-creds reddit-sub
+            (process-new-comment! pat-env reddit-sub
               cmt)
-            (jdbc/insert! pg-db "processed_comments"
+            (sql/insert! sql-client "processed_comments"
               (merge
                 (select-keys cmt [:reddit_comment_id])
                 {:t_processed_epoch_s (u/date-to-epoch-s (java.util.Date.))}))
@@ -302,17 +313,18 @@ WHERE NOT EXISTS (
   *e)
 
 (defn set-subreddit-checkpoint!
-  [pg-db pat_subreddit_id checked-until-epoch-s]
-  (jdbc/execute! pg-db
+  [sql-client pat_subreddit_id checked-until-epoch-s]
+  (sql/execute! sql-client
     ["INSERT INTO pat_subreddit_checkpoints(pat_subreddit_id, pat_checked_until_epoch_s)
        VALUES (?, ?)
        ON CONFLICT (pat_subreddit_id) DO UPDATE SET
        pat_checked_until_epoch_s = ?"
-     pat_subreddit_id checked-until-epoch-s checked-until-epoch-s]))
+     pat_subreddit_id checked-until-epoch-s checked-until-epoch-s]
+    {}))
 
 
 (defn fetch-recent-comments-in-sub
-  [reddit-creds pat_subreddit_id from-epoch-s]
+  [reddit-client pat_subreddit_id from-epoch-s]
   (into []
     (comp
       (map (fn reshaped-cmt [m]
@@ -330,7 +342,7 @@ WHERE NOT EXISTS (
       (filter (fn recent-comment? [cmt]
                 (-> cmt :reddit.comment/created_utc u/date-to-epoch-s
                   (>= from-epoch-s)))))
-    (reddit/request-lazy-listing reddit-creds
+    (redd/request-lazy-listing reddit-client
       ;; NOTE this API endpoint is not officially documented (Val, 11 Mar 2020)
       ;; I found about it here: https://www.reddit.com/r/modhelp/comments/btji32/want_to_see_unmoderated_comments/
       {:method :get
@@ -339,7 +351,7 @@ WHERE NOT EXISTS (
                       :limit 25}})))
 
 (comment
-  (fetch-recent-comments-in-sub reddit-creds "discussion_patiente"
+  (fetch-recent-comments-in-sub reddit-client "discussion_patiente"
     (-> (u/now-date) u/date-to-epoch-s (- (* 60 60 24))))
 
 
@@ -352,35 +364,38 @@ WHERE NOT EXISTS (
 
 
 (defn process-new-recent-comments-in-sub!
-  [pg-db reddit-creds reddit-sub]
+  [pat-env reddit-sub]
   (let [start-time
         (->
           (or
             (->
-              (jdbc/query pg-db
+              (sql/query (::patenv/sql-client pat-env)
                 ["SELECT pat_checked_until_epoch_s FROM pat_subreddit_checkpoints
            WHERE pat_subreddit_id = ?"
                  (:pat_subreddit_id reddit-sub)]
                 {:as-arrays? true})
               rest
               ffirst)
-            (-> (u/now-date) u/date-to-epoch-s))
+            (-> pat-env ::patenv/now-date u/date-to-epoch-s))
           (- reddit-new-comments-lag))
         end-time (-> (java.util.Date.) .getTime (quot 1000))
-        recent-comments (fetch-recent-comments-in-sub reddit-creds (:pat_subreddit_id reddit-sub) start-time)]
-    (process-new-comments! pg-db reddit-creds reddit-sub
+        recent-comments (fetch-recent-comments-in-sub
+                          (::patenv/reddit-client pat-env)
+                          (:pat_subreddit_id reddit-sub) start-time)]
+    (process-new-comments! pat-env reddit-sub
       recent-comments)
-    (set-subreddit-checkpoint! pg-db (:pat_subreddit_id reddit-sub) end-time)))
+    (set-subreddit-checkpoint! (::patenv/sql-client pat-env)
+      (:pat_subreddit_id reddit-sub) end-time)))
 
 (defn process-new-recent-comments!
-  [pg-db reddit-creds reddit-subs]
+  [pat-env reddit-subs]
   (log/debug "Processing new recent comments")
   (run!
-    #(process-new-recent-comments-in-sub! pg-db reddit-creds %)
+    #(process-new-recent-comments-in-sub! pat-env %)
     reddit-subs))
 
 (comment
-  (process-new-recent-comments! pg-db reddit-creds ["discussion_patiente"])
+  (process-new-recent-comments! pat-env ["discussion_patiente"])
 
 
   (jdbc/query pg-db ["SELECT * FROM processed_comments"])
@@ -440,6 +455,7 @@ WHERE NOT EXISTS (
 
 
 (comment ;; How many requests to this post?
+
   (jdbc/query pg-db
     ["SELECT * FROM pat_comment_requests WHERE reddit_parent_id = ?"
      (str "t3_" "fh3a07")])

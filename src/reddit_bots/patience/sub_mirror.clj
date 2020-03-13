@@ -4,7 +4,11 @@
             [clojure.java.jdbc :as jdbc]
             [cheshire.core :as json]
             [reddit-bots.patience.utils :as u]
-            [taoensso.timbre :as log]))
+            [taoensso.timbre :as log]
+            [reddit-bots.patience.env.reddit :as redd]
+            [reddit-bots.patience.env :as patenv]
+            [reddit-bots.patience.env.effect :as pat-eff]
+            [reddit-bots.patience.env.sql :as sql]))
 
 
 ;; ------------------------------------------------------------------------------
@@ -58,10 +62,14 @@
   [from-sub to-sub post-fullname]
   (str "xpost|" from-sub "|" to-sub "|" post-fullname))
 
-(defn xpost-hot-posts-from-sub!
-  [pg-db reddit-creds from-sub to-sub reddit-hot-api-params]
+(defn xpost-hot-posts-from-sub-commands
+  [{sql-client ::patenv/sql-client
+    reddit-client ::patenv/reddit-client
+    now-date ::patenv/now-date
+    :as pat-env}
+   from-sub to-sub reddit-hot-api-params]
   (let [hot-posts (->
-                    (reddit/reddit-request reddit-creds
+                    (redd/read-from-reddit reddit-client
                       {:method :get
                        :reddit.api/path (str "/r/" from-sub "/hot")
                        :query-params (merge {:api_type "json"}
@@ -73,20 +81,21 @@
         not-seen-fullnames
         (into #{}
           (map :id)
-          (jdbc/query pg-db
+          (sql/query sql-client
             [sql_unseen-posts
              (json/generate-string
                (->> hot-posts
                  (mapv
                    (fn [post]
                      (let [idk (xpost-idempotency-key from-sub to-sub (:name post))]
-                       [(:name post) idk])))))]))
+                       [(:name post) idk])))))]
+            {}))
 
         xpost-commands
         (->> hot-posts
           (filter #(-> % :name not-seen-fullnames))
-          (mapv
-            (let [now-epoch-s (u/date-to-epoch-s (u/now-date))]
+          (mapcat
+            (let [now-epoch-s (u/date-to-epoch-s now-date)] ;; TODO from env (Val, 13 Mar 2020)
               (fn [post]
                 (let [xpost-reddit-req
                       {:method :post
@@ -100,18 +109,25 @@
                       sql-row-mark-seen
                       {:ad_idempotency_key (xpost-idempotency-key from-sub to-sub (:name post))
                        :at_t_done_epoch_s now-epoch-s}]
-                  [xpost-reddit-req
-                   sql-row-mark-seen])))))]
-    (->> xpost-commands
-      (run!
-        (fn xpost! [[xpost-reddit-req
-                     sql-row-mark-seen]]
-          (try
-            (reddit/reddit-request reddit-creds xpost-reddit-req)
-            (catch Throwable err
-              (log/error err "Error cross-posting.")
-              (throw err)))
-          (jdbc/insert! pg-db "already_done" sql-row-mark-seen))))))
+                  [{::pat-eff/effect-type ::pat-eff/change-reddit!
+                    ::pat-eff/reddit-req xpost-reddit-req}
+                   {::pat-eff/effect-type ::pat-eff/jdbc-insert!
+                    ::pat-eff/jdbc-args ["already_done" sql-row-mark-seen]}]))))
+          vec)]
+    xpost-commands))
+
+(defn xpost-hot-posts-from-sub!
+  [pat-env reddit-hot-api-params from-sub to-sub]
+  (let [cmds (xpost-hot-posts-from-sub-commands pat-env
+               reddit-hot-api-params from-sub to-sub)]
+    (run!
+      (fn [cmd]
+        (try
+          (pat-eff/effect! pat-env cmd)
+          (catch Throwable err
+            (log/error err "Error cross-posting." cmd)
+            (throw err))))
+      cmds)))
 
 (comment
   (xpost-hot-posts-from-sub!
@@ -125,10 +141,10 @@
   *e)
 
 (defn xpost-hot-posts!
-  [pg-db reddit-creds from-sub+to-sub+api-param-s]
+  [pat-env from-sub+to-sub+api-param-s]
   (log/debug "Cross-posting hot posts...")
   (->> from-sub+to-sub+api-param-s
     (run!
       (fn [[reddit-hot-api-params from-sub to-sub]]
-        (xpost-hot-posts-from-sub! pg-db reddit-creds
+        (xpost-hot-posts-from-sub! pat-env
           reddit-hot-api-params from-sub to-sub)))))
