@@ -76,7 +76,7 @@
         delay-s (* 60 60 24)
         epoch-24h-ago-s (-> now-epoch-s
                           (- delay-s))
-        to-notify
+        to-notifys
         (sql/query (::patenv/sql-client pat-env)
           ["SELECT reddit_parent_id, reddit_user_fullname, reddit_user_name, pat_subreddit_id
             FROM pat_comment_requests
@@ -84,44 +84,50 @@
             AND pat_request_epoch_s < ?"
            epoch-24h-ago-s]
           {})]
-    (->> to-notify
-      (mapv
+    (log/debug (count to-notifys) "reminders to send...")
+    (->> to-notifys
+      (mapcat
         (fn [to-notify]
-          (let [reddit-sub (get id->reddit-sub (:pat_subreddit_id to-notify))
-                parent-cmt (-> (redd/fetch-thing-by-fullname (::patenv/reddit-client pat-env)
-                                 (:reddit_parent_id to-notify))
-                             (select-keys
-                               [:user_removed
-                                :author
-                                :permalink]))
-                reddit-notif-req
-                {:method :post
-                 :reddit.api/path "/api/mod/conversations"
-                 :form-params {:isAuthorHidden false
-                               :srName (:pat_subreddit_id reddit-sub)
-                               :subject (i18n/pat-wording reddit-sub :pat-24h-reminder--subject
-                                          to-notify parent-cmt)
-                               :body (i18n/pat-wording reddit-sub :pat-24h-reminder--body
-                                       to-notify parent-cmt)
-                               :to (:reddit_user_name to-notify)}}
-                db-update
-                ["UPDATE pat_comment_requests
+          (if-some [reddit-sub (get id->reddit-sub (:pat_subreddit_id to-notify))]
+            (let [parent-cmt (-> (redd/fetch-thing-by-fullname (::patenv/reddit-client pat-env)
+                                   (:reddit_parent_id to-notify))
+                               (select-keys
+                                 [:user_removed
+                                  :author
+                                  :permalink]))
+                  reddit-notif-req
+                  {:method :post
+                   :reddit.api/path "/api/mod/conversations"
+                   :form-params {:isAuthorHidden false
+                                 :srName (:pat_subreddit_id reddit-sub)
+                                 :subject (i18n/pat-wording reddit-sub :pat-24h-reminder--subject
+                                            to-notify parent-cmt)
+                                 :body (i18n/pat-wording reddit-sub :pat-24h-reminder--body
+                                         to-notify parent-cmt)
+                                 :to (:reddit_user_name to-notify)}}
+                  db-update
+                  ["UPDATE pat_comment_requests
                      SET pat_sent_reminder = TRUE
                      WHERE reddit_parent_id = ? AND reddit_user_fullname = ?"
-                 (:reddit_parent_id to-notify)
-                 (:reddit_user_fullname to-notify)]]
-            [{::pat-eff/effect-type ::pat-eff/change-reddit!
-              ::pat-eff/reddit-req reddit-notif-req}
-             {::pat-eff/effect-type ::pat-eff/jdbc-execute!
-              ::pat-eff/jdbc-args [db-update {}]}]))))))
+                   (:reddit_parent_id to-notify)
+                   (:reddit_user_fullname to-notify)]]
+              [{::pat-eff/effect-type ::pat-eff/change-reddit!
+                ::pat-eff/reddit-req reddit-notif-req}
+               {::pat-eff/effect-type ::pat-eff/jdbc-execute!
+                ::pat-eff/jdbc-args [db-update {}]}])
+            (do
+              (log/warn "No reddit-sub configuration for" (pr-str :pat_subreddit_id) (pr-str (:pat_subreddit_id to-notify)))
+              nil))))
+      vec)))
 
 
 (defn send-reminders!
   [pat-env reddit-subs]
-  (log/debug "Sending reminders...")
   (let [reminder-cmds (reminder-commands pat-env reddit-subs)]
-    (log/debug (count reminder-cmds) "reminders to send...")
-    (run! pat-eff/effect! reminder-cmds)))
+    (run!
+      (fn [cmd]
+        (pat-eff/effect! pat-env cmd))
+      reminder-cmds)))
 
 
 (comment

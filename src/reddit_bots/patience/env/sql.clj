@@ -52,7 +52,7 @@
   [pg-db]
   env-protocols/SqlClient
   (query [_this query args]
-    (query pg-db query args))
+    (jdbc/query pg-db query args))
   (insert! [_this table-name row-map]
     (jdbc/insert! pg-db table-name row-map))
   (execute! [_this sql-params opts]

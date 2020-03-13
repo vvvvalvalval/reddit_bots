@@ -261,7 +261,10 @@
 (defn process-new-comment!
   [pat-env reddit-sub cmt]
   (let [cmds (process-new-comment-commands pat-env reddit-sub cmt)]
-    (run! pat-eff/effect! cmds)))
+    (run!
+      (fn [cmd]
+        (pat-eff/effect! pat-env cmd))
+      cmds)))
 
 
 (def sql_unprocessed-comments
