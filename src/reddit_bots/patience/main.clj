@@ -1,17 +1,19 @@
 (ns reddit-bots.patience.main
-  (:require [reddit-bots.patience.utils.scheduling :as usch]
-            [reddit-bots.patience.utils :as u]
+  (:require [clojure.core.async :as a]
+            [clojure.java.jdbc :as jdbc]
             [hikari-cp.core :as hcp]
             [taoensso.timbre :as log]
             [taoensso.timbre.appenders.core :as log-appenders]
+            [reddit-bots.patience.utils.scheduling :as usch]
             [reddit-bots.patience.db.postgres-setup]
             [reddit-bots.patience.new-comments]
             [reddit-bots.patience.sub-mirror]
             [reddit-bots.patience.reply-reminders]
+            [reddit-bots.patience.mark-as-read]
             [reddit-bots.patience.env :as patenv]
             [reddit-bots.patience.env.sql :as sql]
             [reddit-bots.patience.env.reddit :as redd]
-            [clojure.java.jdbc :as jdbc]))
+            [reddit-bots.patience.utils :as u]))
 
 (require 'sc.api) ;; FIXME (Val, 10 Mar 2020)
 
@@ -59,7 +61,13 @@
                  (patenv/refresh-now pat-env)
                  xpost-config)
                (catch Throwable err
-                 (log/error err "Error in loop iteration for" `reddit-bots.patience.sub-mirror/xpost-hot-posts!)))))]]
+                 (log/error err "Error in loop iteration for" `reddit-bots.patience.sub-mirror/xpost-hot-posts!)))
+             (a/<!! (a/timeout (* 1000 10)))
+             (try
+               (reddit-bots.patience.mark-as-read/mark-msgs-to-ignore-as-read!
+                 (patenv/refresh-now pat-env))
+               (catch Throwable err
+                 (log/error err "Error in loop iteration for" `reddit-bots.patience.mark-as-read/mark-msgs-to-ignore-as-read!)))))]]
     (fn stop-loops! []
       (run! #(%) stop-fns))))
 
@@ -127,7 +135,7 @@
 
 
   (def pat-env
-    (mock-env jdbc-url reddit-client-id reddit-client-secret reddit-username reddit-pwd))
+    (real-env jdbc-url reddit-client-id reddit-client-secret reddit-username reddit-pwd))
 
   (def stop! (start-loops pat-env))
 

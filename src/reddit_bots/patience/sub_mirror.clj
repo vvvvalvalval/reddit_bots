@@ -95,7 +95,7 @@
         (->> hot-posts
           (filter #(-> % :name not-seen-fullnames))
           (mapcat
-            (let [now-epoch-s (u/date-to-epoch-s now-date)] ;; TODO from env (Val, 13 Mar 2020)
+            (let [now-epoch-s (u/date-to-epoch-s now-date)]
               (fn [post]
                 (let [xpost-reddit-req
                       {:method :post
