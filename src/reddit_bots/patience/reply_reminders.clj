@@ -9,7 +9,8 @@
             [reddit-bots.patience.env.sql :as sql]
             [reddit-bots.patience.env :as patenv]
             [reddit-bots.patience.env.effect :as pat-eff]
-            [reddit-bots.patience.env.reddit :as redd]))
+            [reddit-bots.patience.env.reddit :as redd]
+            [cheshire.core :as json]))
 
 
 (defmethod i18n/pat-wording [:pat-24h-reminder--subject :locale/fr]
@@ -121,12 +122,38 @@
       vec)))
 
 
+(defn is-err-user-no-longer-exists?
+  [err]
+  (and
+    (-> err ex-data ::pat-eff/command ::pat-eff/effect-type (= ::pat-eff/change-reddit!))
+    (when-some [err-data (-> err ex-cause ex-data)]
+      (and
+        (-> err-data :type (= :clj-http.client/unexceptional-status))
+        (-> err-data :status (= 400))
+        (-> err-data :headers
+          (get "Content-Type")
+          (= "application/json; charset=UTF-8"))
+        (-> err-data :body (json/parse-string false)
+          (get "explanation")
+          (= "that user doesn't exist"))))))
+
+
 (defn send-reminders!
   [pat-env reddit-subs]
   (let [reminder-cmds (reminder-commands pat-env reddit-subs)]
     (run!
       (fn [cmd]
-        (pat-eff/effect! pat-env cmd))
+        (try
+          (pat-eff/effect! pat-env cmd)
+          (catch Throwable err
+            (cond
+              (is-err-user-no-longer-exists? err)
+              (do
+                (log/info "User does not exist, reminder viewed as sent." cmd)
+                nil)
+
+              :else
+              (throw err)))))
       reminder-cmds)))
 
 
@@ -134,16 +161,19 @@
   (jdbc/execute! pg-db
     ["UPDATE pat_comment_requests SET pat_sent_reminder = FALSE WHERE TRUE"])
 
-  (reminder-commands
-    pg-db
-    ["discussion_patiente"])
+  (def pg-db *1)
 
-  *e
+  (reminder-commands
+    (patenv/refresh-now pat-env)
+    reddit-bots.patience.main/reddit-subs)
+
+  (ex-cause *e)
+
+  (eval `(sc.api/defsc ~(sc.api/last-ep-id)))
 
   (send-reminders!
-    pg-db
-    reddit-creds
-    ["discussion_patiente"])
+    (patenv/refresh-now pat-env)
+    reddit-bots.patience.main/reddit-subs)
 
   (def rc1 (assoc reddit-creds
              :username "vvvvalvalval"
