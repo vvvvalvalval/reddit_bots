@@ -31,6 +31,9 @@
   (->> top-posts (map :kind) frequencies)
 
   (def tp (:data (nth top-posts 0)))
+  (into (sorted-map)
+    (:data
+      (nth top-posts 1)))
 
   ;; Cross-posting
   ;; https://www.reddit.com/r/redditdev/comments/7ejy6e/how_can_i_submit_a_crosspost_via_reddits_api_the/dq6ehey?utm_source=share&utm_medium=web2x
@@ -43,6 +46,18 @@
       :kind "crosspost"
       :title (:title tp)
       :crosspost_fullname (:name tp)}})
+
+
+  (reddit/reddit-request reddit-creds
+    {:method :post
+     :reddit.api/path "/api/submit"
+     :form-params
+     {:api_type "json"
+      :sr "discussion_patiente"
+      :kind "crosspost"
+      :title "TEST XPOST 1"
+      :crosspost_fullname (str "t3_" "ssh9eu")
+      :flair_id "63a19abe-a874-11ec-afb6-c6906b5c16a7"}})
 
   *e)
 
@@ -66,8 +81,11 @@
   [{sql-client ::patenv/sql-client
     reddit-client ::patenv/reddit-client
     now-date ::patenv/now-date
-    :as pat-env}
-   from-sub to-sub reddit-hot-api-params]
+    :as _pat-env}
+   from-sub to-sub reddit-hot-api-params
+   {:as _opts
+    flair_text->id :flair_text->id
+    :or {flair_text->id {}}}]
   (let [hot-posts (->
                     (redd/read-from-reddit reddit-client
                       {:method :get
@@ -101,11 +119,14 @@
                       {:method :post
                        :reddit.api/path "/api/submit"
                        :form-params
-                       {:api_type "json"
-                        :sr to-sub
-                        :kind "crosspost"
-                        :title (:title post)
-                        :crosspost_fullname (:name post)}}
+                       (merge
+                         {:api_type "json"
+                          :sr to-sub
+                          :kind "crosspost"
+                          :title (:title post)
+                          :crosspost_fullname (:name post)}
+                         (when-some [flair-id (get flair_text->id (:link_flair_text post))]
+                           {:flair_id flair-id}))}
                       sql-row-mark-seen
                       {:ad_idempotency_key (xpost-idempotency-key from-sub to-sub (:name post))
                        :at_t_done_epoch_s now-epoch-s}]
@@ -117,9 +138,10 @@
     xpost-commands))
 
 (defn xpost-hot-posts-from-sub!
-  [pat-env reddit-hot-api-params from-sub to-sub]
+  [pat-env from-sub to-sub reddit-hot-api-params  opts]
   (let [cmds (xpost-hot-posts-from-sub-commands pat-env
-               reddit-hot-api-params from-sub to-sub)]
+               from-sub to-sub reddit-hot-api-params
+               opts)]
     (run!
       (fn [cmd]
         (try
@@ -145,6 +167,6 @@
   (log/debug "Cross-posting hot posts...")
   (->> from-sub+to-sub+api-param-s
     (run!
-      (fn [[reddit-hot-api-params from-sub to-sub]]
+      (fn [[from-sub to-sub reddit-hot-api-params opts]]
         (xpost-hot-posts-from-sub! pat-env
-          reddit-hot-api-params from-sub to-sub)))))
+          from-sub to-sub reddit-hot-api-params opts)))))

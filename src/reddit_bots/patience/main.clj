@@ -23,8 +23,7 @@
     {:appenders {:spit (log-appenders/spit-appender {:fname "data/reddit-bots.log"})}}))
 
 (def reddit-subs
-  [#_
-   {:pat_subreddit_id "discussion_patiente"
+  [{:pat_subreddit_id "discussion_patiente"
     :pat_subreddit_locale :locale/fr
     :pat_subreddit_rules_url "https://www.reddit.com/r/discussion_patiente/comments/f9aka4/bienvenue_sur_rdiscussion_patiente/"}
    {:pat_subreddit_id "patient_us_politics"
@@ -35,8 +34,23 @@
     :pat_subreddit_rules_url "https://www.reddit.com/r/patient_hackernews/comments/fgwtlh/welcome_to_rpatient_hackernews_readme/"}])
 
 (def xpost-config
-  [#_["france" "discussion_patiente" {:limit 25 :count 25}]
-   ["hackernews" "patient_hackernews" {:limit 25 :count 25}]])
+  [["france" "discussion_patiente" {:limit 25 :count 25}
+    {:flair_text->id
+     {"Politique" "524fa422-a874-11ec-9832-8e11153b619d"
+      "Société" "5d8d187e-a874-11ec-89e1-5a3a728d3ce0"
+      "Écologie" "63a19abe-a874-11ec-afb6-c6906b5c16a7"
+      "Culture" "6abab2d6-a874-11ec-8267-6a7f1fc4e2f3"
+      "Science" "807139b0-a874-11ec-a4e2-3a753bfa8d53"
+      "Actus" "89c83df6-a874-11ec-b22e-c6a20b286148"
+      "COVID-19" "1cff1714-a877-11ec-b792-fe9ded4c478e"
+      "Sport" "25a67830-a877-11ec-8257-c6caa0fb96cc"
+      "Forum Libre" "e3588616-a877-11ec-bda8-d6aef1399371"
+      "Ask France" "04c2dffe-a878-11ec-9ed7-66652562cee1"
+      "Économie" "be1c7a5a-a882-11ec-9b81-1273542d1985"
+      "Paywall" "47fcdbfc-a883-11ec-8ca4-aa81af11c721"
+      "Humour" "a9d5f21e-a883-11ec-ae7f-1e09e05904d9"}}]
+   ["hackernews" "patient_hackernews" {:limit 25 :count 25}
+    {}]])
 
 (defn start-loops
   [pat-env]
@@ -133,7 +147,7 @@
     (def reddit-client-id "Y9V30XN7RC-2EQ")
     (def reddit-username "PatientModBot"))
 
-  (def reddit-client-secret "")
+  (def reddit-client-secret "") ;; https://www.reddit.com/prefs/apps
   (def reddit-pwd "")
 
 
